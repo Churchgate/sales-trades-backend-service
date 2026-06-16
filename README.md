@@ -78,7 +78,7 @@ jobs/       APScheduler entrypoints that wire services to the scheduler
 ```
 
 **Why this shape:** the API never builds SQL, services never touch HTTP, and the
-Freshsales-specific quirks (Classic API paths, `MM-DD-YYYY` timestamps, rate
+Freshsales-specific quirks (Suite API host/paths, `MM-DD-YYYY` timestamps, rate
 limits, `cf_*` custom fields) are all quarantined in `freshsales/`. Swapping the
 CRM or the transport touches one package.
 
@@ -107,7 +107,7 @@ backend/
 │   │   └── security.py          # bcrypt hashing, JWT create/decode
 │   ├── freshsales/
 │   │   ├── client.py            # async HTTPX client, rate limiter, retry/backoff
-│   │   ├── endpoints.py         # Freshsales Classic API path registry (/api/...)
+│   │   ├── endpoints.py         # Freshsales Suite API path registry (/crm/sales/api/...)
 │   │   └── parsing.py           # timestamp/TZ normalization, cf_* split, resolver
 │   ├── models/                  # SQLModel tables (one file per table)
 │   ├── repositories/            # async data-access functions
@@ -166,7 +166,7 @@ excludes the Test pipeline, derives `business_line`, and builds a
 `PipelineStageResolver` (name→id lookup) cached on `app.state` for webhook use.
 
 **Deal sync** (`services/deal_sync.py`) — every 20 min. For each active pipeline's
-`view_id`, paginates `/api/deals/view/{id}`, upserts `deals_snapshot`, refreshes
+`view_id`, paginates `/crm/sales/api/deals/view/{id}`, upserts `deals_snapshot`, refreshes
 `age_days`/`rotten_days`. Guarded by a Postgres advisory lock so overlapping or
 multi-instance runs don't collide.
 

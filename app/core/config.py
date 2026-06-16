@@ -54,7 +54,9 @@ class Settings(BaseSettings):
 
     @property
     def freshsales_base_url(self) -> str:
-        return f"https://{self.freshsales_domain}.freshsales.io"
+        # Freshsales Suite host. The endpoint paths in app/freshsales/endpoints.py
+        # carry the /crm/sales/api prefix, so base_url is the bare host.
+        return f"https://{self.freshsales_domain}.myfreshworks.com"
 
 
 @lru_cache

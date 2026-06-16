@@ -1,6 +1,6 @@
 """Scheduled deal-view sync (spec §6B): reconciliation + `rotten_days` refresh.
 
-For each active pipeline, paginate `/api/deals/view/{view_id}` fully and upsert
+For each active pipeline, paginate `/crm/sales/api/deals/view/{view_id}` fully and upsert
 `deals_snapshot`. This catches anything webhooks missed and refreshes fields
 the webhook payload doesn't carry (`rotten_days`, `age`).
 
@@ -10,7 +10,7 @@ Two open items, both non-blocking for the foundation build:
   not returned by any reference endpoint in scope (spec §5). It must be
   configured manually on `pipelines.view_id`; pipelines without one are
   skipped here with a warning.
-- The exact field names on a `/api/deals/view/{view_id}` record haven't been
+- The exact field names on a `/crm/sales/api/deals/view/{view_id}` record haven't been
   validated against a live response (no API key configured yet). `_parse_view_deal`
   uses the field names implied by spec §5 with sensible fallbacks; revisit once
   a sample payload is available.
@@ -40,7 +40,7 @@ def _extract_sales_account(deal: dict[str, Any]) -> tuple[int | None, str | None
 
 
 def _parse_view_deal(pipeline_id: int, deal: dict[str, Any]) -> dict[str, Any]:
-    """Map a `/api/deals/view/{view_id}` record onto `deals_snapshot` columns."""
+    """Map a `/crm/sales/api/deals/view/{view_id}` record onto `deals_snapshot` columns."""
     curated_cf, remaining_cf = split_custom_fields(_extract_custom_fields(deal))
     sales_account_id, sales_account_name = _extract_sales_account(deal)
 

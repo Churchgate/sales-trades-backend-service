@@ -50,7 +50,7 @@ async def sync_pipelines_and_stages(session: AsyncSession, client: FreshsalesCli
             logger.info("skipping stages for inactive pipeline", pipeline_id=pipeline_id)
             continue
 
-        # Classic API embeds stages inside each pipeline object
+        # Suite /selector/deal_pipelines embeds stages inside each pipeline object
         for stage in pipeline.get("deal_stages", []):
             await reference_repo.upsert_stage(
                 session,

@@ -6,7 +6,7 @@ from app.freshsales.client import FreshsalesClient
 from app.repositories import reference_repo
 from app.services.reference_sync import EXCLUDED_PIPELINE_IDS, run_reference_sync
 
-BASE_URL = "https://rbpropertieslimited.freshsales.io"
+BASE_URL = "https://rbpropertieslimited.myfreshworks.com"
 
 
 async def test_reference_sync_excludes_test_pipeline_and_builds_resolver(
@@ -15,8 +15,8 @@ async def test_reference_sync_excludes_test_pipeline_and_builds_resolver(
     test_pipeline_id = next(iter(EXCLUDED_PIPELINE_IDS))
 
     with respx.mock(base_url=BASE_URL, assert_all_called=True) as mock_router:
-        # Classic API embeds deal_stages inside each pipeline object
-        mock_router.get("/api/selector/deal_pipelines").mock(
+        # Suite /selector/deal_pipelines embeds deal_stages inside each pipeline object
+        mock_router.get("/crm/sales/api/selector/deal_pipelines").mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -54,7 +54,7 @@ async def test_reference_sync_excludes_test_pipeline_and_builds_resolver(
                 },
             )
         )
-        mock_router.get("/api/selector/owners").mock(
+        mock_router.get("/crm/sales/api/selector/owners").mock(
             return_value=httpx.Response(
                 200, json={"users": [{"id": 100, "name": "Vinay", "email": "vinay@example.com"}]}
             )
