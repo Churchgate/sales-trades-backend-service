@@ -12,7 +12,17 @@ _settings = get_settings()
 # asyncpg connection is bound to the loop it was created on. Reusing a pooled
 # connection across tests raises "attached to a different loop". NullPool opens
 # a fresh connection per checkout so no connection outlives a single test.
-_test_engine = create_async_engine(_settings.test_database_url, poolclass=NullPool)
+#
+# statement_cache_size=0: required for the Supabase transaction pooler (pgbouncer).
+# asyncpg names prepared statements deterministically (__asyncpg_stmt_N__); when
+# pgbouncer reuses a server connection across checkouts, a fresh client connection
+# re-issues the same name and raises DuplicatePreparedStatementError. Disabling the
+# cache mirrors the app engine in app/core/database.py.
+_test_engine = create_async_engine(
+    _settings.test_database_url,
+    poolclass=NullPool,
+    connect_args={"statement_cache_size": 0},
+)
 _TestSessionFactory = async_sessionmaker(bind=_test_engine, expire_on_commit=False)
 
 # Truncate order respects FK references (deals_snapshot/stages -> pipelines, etc.)
