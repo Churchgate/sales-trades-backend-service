@@ -1,0 +1,58 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- App ---
+    environment: str = "development"
+    debug: bool = False
+    log_level: str = "INFO"
+
+    # --- Database ---
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/churchgate_dashboard"
+    )
+    test_database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/churchgate_dashboard_test"
+    )
+    database_pool_size: int = 10
+    database_max_overflow: int = 5
+    database_pool_timeout: int = 30
+
+    # --- Freshsales ---
+    freshsales_domain: str = "rbpropertieslimited"
+    freshsales_api_key: str = ""
+    freshsales_tz: str = "Africa/Lagos"
+    freshsales_webhook_secret: str = ""
+    freshsales_rate_limit_per_hour: int = 1000
+
+    # --- Frontend ---
+    frontend_base_url: str = "http://localhost:3000"
+
+    # --- JWT ---
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_minutes: int = 60 * 24 * 14
+
+    # --- Scheduler ---
+    run_scheduler: bool = True
+    deal_sync_interval_minutes: int = 20
+    reference_sync_interval_hours: int = 24
+
+    @property
+    def freshsales_base_url(self) -> str:
+        return f"https://{self.freshsales_domain}.freshsales.io"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
