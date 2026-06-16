@@ -23,14 +23,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
 
     app.state.stage_resolver = None
-    try:
-        async with session_scope() as session, FreshsalesClient() as client:
-            app.state.stage_resolver = await reference_sync.run_reference_sync(session, client)
-        logger.info("startup reference sync complete")
-    except Exception:
-        logger.exception(
-            "startup reference sync failed; webhook ingestion will 503 until a sync succeeds"
-        )
+    if settings.sync_on_startup:
+        try:
+            async with session_scope() as session, FreshsalesClient() as client:
+                app.state.stage_resolver = await reference_sync.run_reference_sync(session, client)
+            logger.info("startup reference sync complete")
+        except Exception:
+            logger.exception(
+                "startup reference sync failed; webhook ingestion will 503 until a sync succeeds"
+            )
+    else:
+        logger.info("startup reference sync skipped (sync_on_startup=false)")
 
     scheduler = create_scheduler()
     if settings.run_scheduler:

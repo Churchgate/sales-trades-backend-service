@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     run_scheduler: bool = True
     deal_sync_interval_minutes: int = 20
     reference_sync_interval_hours: int = 24
+    # Run the reference sync on app startup. Disable in dev so `fastapi dev`
+    # auto-reloads don't hit Freshsales on every file save; trigger it manually
+    # via POST /api/v1/admin/sync/reference instead.
+    sync_on_startup: bool = True
 
     @property
     def freshsales_base_url(self) -> str:
