@@ -10,7 +10,7 @@ from app.freshsales.parsing import (
     parse_webhook_timestamp,
     split_custom_fields,
 )
-from app.repositories import deals_repo, events_repo
+from app.repositories import deals_repo, events_repo, reference_repo
 from app.schemas.webhook import FreshsalesDealWebhook
 from app.services.change_detection import detect_changes
 
@@ -83,10 +83,9 @@ async def ingest_webhook(
             deal_id=webhook.deal_id,
         )
 
-    if webhook.deal_owner_id is not None:
-        new_owner_id: int | None = webhook.deal_owner_id
-    else:
-        new_owner_id = existing.owner_id if existing else None
+    known_owner_ids = {o.id for o in await reference_repo.list_owners(session)}
+    raw_owner_id = webhook.deal_owner_id if webhook.deal_owner_id is not None else (existing.owner_id if existing else None)
+    new_owner_id: int | None = raw_owner_id if raw_owner_id in known_owner_ids else None
 
     occurred_at = parse_webhook_timestamp(webhook.deal_stage_updated_time) or datetime.now(UTC)
 
