@@ -46,6 +46,12 @@ class DealSnapshot(SQLModel, table=True):
     cf_deal_status: str | None = None
     cf_total_lease_amount: float | None = Field(default=None, sa_column=Column(Numeric))
 
+    deal_created_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True))
+    )
+    lost_reason: str | None = None
+    lost_reason_id: int | None = Field(default=None, sa_column=Column(BigInteger))
+
     custom_fields: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB))
     raw_payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB))
 
