@@ -14,7 +14,7 @@ async def freshsales_deal_webhook(
     payload: dict[str, Any],
     session: SessionDep,
     resolver: ResolverDep,
-    x_webhook_secret: Annotated[str | None, Header()] = None,
+    x_freshsales_webhook_secret: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
     """Freshsales workflow automation webhook (spec §6A).
 
@@ -23,7 +23,7 @@ async def freshsales_deal_webhook(
     """
     settings = get_settings()
     expected_secret = settings.freshsales_webhook_secret
-    if expected_secret and x_webhook_secret != expected_secret:
+    if expected_secret and x_freshsales_webhook_secret != expected_secret:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret"
         )
