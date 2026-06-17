@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     freshsales_tz: str = "Africa/Lagos"
     freshsales_webhook_secret: str = ""
     freshsales_rate_limit_per_hour: int = 1000
+    # Global deal smart-view ids synced into deals_snapshot. Open + Won + Lost
+    # together cover every non-deleted deal exactly once (status-partitioned);
+    # upsert dedups by deal_id so any overlap is harmless. Comma-separated.
+    freshsales_deal_view_ids: str = "17001462746,17001462752,17001462751"
 
     # --- Frontend ---
     frontend_base_url: str = "http://localhost:3000"
@@ -57,6 +61,10 @@ class Settings(BaseSettings):
         # Freshsales Suite host. The endpoint paths in app/freshsales/endpoints.py
         # carry the /crm/sales/api prefix, so base_url is the bare host.
         return f"https://{self.freshsales_domain}.myfreshworks.com"
+
+    @property
+    def deal_view_ids(self) -> list[int]:
+        return [int(v) for v in self.freshsales_deal_view_ids.split(",") if v.strip()]
 
 
 @lru_cache

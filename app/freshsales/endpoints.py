@@ -11,13 +11,20 @@ pipeline object, so there is no need to call the separate stages endpoint.
 
 
 def deals_view(view_id: int, page: int = 1) -> str:
-    """Deals list for a pipeline view. Paginated, 25/page default."""
-    return f"/crm/sales/api/deals/view/{view_id}?page={page}"
+    """Deals list for a saved view. `include=owner` sideloads owner_id (otherwise
+    absent from view records). Paginated, 25/page default."""
+    return f"/crm/sales/api/deals/view/{view_id}?include=owner&page={page}"
 
 
 def deal_detail(deal_id: int) -> str:
-    """Full deal record including custom_field block."""
-    return f"/crm/sales/api/deals/{deal_id}"
+    """Full deal record (wrapped in `deal`) incl. custom_field; include=owner adds owner_id."""
+    return f"/crm/sales/api/deals/{deal_id}?include=owner"
+
+
+def filtered_search_deal(page: int = 1) -> str:
+    """POST a filter_rule to search deals across pipelines. Records are thin
+    (no pipeline/stage/owner), so use it only to enumerate deal ids."""
+    return f"/crm/sales/api/filtered_search/deal?page={page}"
 
 
 def deal_pipelines() -> str:

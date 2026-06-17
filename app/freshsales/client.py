@@ -115,6 +115,18 @@ class FreshsalesClient:
         response.raise_for_status()
         return response.json()
 
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(4),
+        wait=_wait_strategy,
+        reraise=True,
+    )
+    async def post(self, path: str, json: dict[str, Any]) -> dict[str, Any]:
+        await self._rate_limiter.acquire()
+        response = await self._client.post(path, json=json)
+        response.raise_for_status()
+        return response.json()
+
     # --- Reference data ---
 
     async def get_pipelines(self) -> dict[str, Any]:
@@ -126,7 +138,9 @@ class FreshsalesClient:
     # --- Deals ---
 
     async def get_deal(self, deal_id: int) -> dict[str, Any]:
-        return await self.get(endpoints.deal_detail(deal_id))
+        """Full deal record (the unwrapped `deal` object)."""
+        data = await self.get(endpoints.deal_detail(deal_id))
+        return data.get("deal", data)
 
     async def paginate_view(self, view_id: int) -> AsyncIterator[dict[str, Any]]:
         """Yield each deal record from a deals/view endpoint, paginating until empty."""
@@ -138,6 +152,29 @@ class FreshsalesClient:
                 break
             for deal in deals:
                 yield deal
+            page += 1
+
+    async def iter_pipeline_deal_ids(self, pipeline_id: int) -> AsyncIterator[int]:
+        """Yield deal ids for one pipeline via filtered_search (reaches non-default
+        pipelines that the system views can't). Records are thin, so we only take ids."""
+        rule = {
+            "filter_rule": [
+                {"attribute": "deal_pipeline_id", "operator": "is_in", "value": [pipeline_id]}
+            ]
+        }
+        page = 1
+        seen = 0
+        while True:
+            body = await self.post(endpoints.filtered_search_deal(page=page), rule)
+            deals = body.get("deals", [])
+            if not deals:
+                break
+            for deal in deals:
+                yield deal["id"]
+            seen += len(deals)
+            total = body.get("meta", {}).get("total")
+            if total is not None and seen >= total:
+                break
             page += 1
 
     # --- Timeline (for backfill) ---
