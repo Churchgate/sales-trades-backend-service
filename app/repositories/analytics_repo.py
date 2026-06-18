@@ -12,6 +12,25 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+async def get_last_activity_at(session: AsyncSession, deal_id: int) -> datetime | None:
+    """Most recent sign of life on a deal — the max across its last stage move, its
+    latest task (due/completed), its latest email, and its latest stage/owner event
+    (spec §B1). Computed in SQL, not stored. `greatest` ignores NULLs, so a deal with
+    no activity in a given source still resolves to the others."""
+    result = await session.execute(
+        text(
+            "SELECT greatest("
+            "(SELECT stage_updated_at FROM deals_snapshot WHERE deal_id = :id), "
+            "(SELECT max(greatest(due_date, completed_date)) FROM tasks_snapshot "
+            " WHERE deal_id = :id), "
+            "(SELECT max(conversation_time) FROM email_activity WHERE deal_id = :id), "
+            "(SELECT max(occurred_at) FROM deal_events WHERE deal_id = :id))"
+        ),
+        {"id": deal_id},
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_data_as_of(session: AsyncSession) -> datetime | None:
     """The reporting watermark every analytics response echoes: the most recent deal
     sync time (`max(deals_snapshot.last_synced_at)`). `None` before the first sync."""

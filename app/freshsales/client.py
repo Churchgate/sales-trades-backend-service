@@ -177,6 +177,17 @@ class FreshsalesClient:
                 break
             page += 1
 
+    # --- Activity (tasks + email conversations) ---
+
+    async def get_deal_tasks(self, deal_id: int) -> dict[str, Any]:
+        """Tasks for one deal (spec §6E). Response wraps the list under `tasks`."""
+        return await self.get(endpoints.deal_tasks(deal_id))
+
+    async def get_deal_conversations(self, deal_id: int) -> dict[str, Any]:
+        """Email conversations for one deal (spec §6D). Response wraps the list
+        under `email_conversations`."""
+        return await self.get(endpoints.deal_conversations(deal_id))
+
     # --- Timeline (for backfill) ---
 
     async def paginate_timeline(self, deal_id: int) -> AsyncIterator[dict[str, Any]]:
