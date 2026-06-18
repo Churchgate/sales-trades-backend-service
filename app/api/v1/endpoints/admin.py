@@ -4,10 +4,10 @@ from app.api.dependencies import SessionDep, require_role
 from app.core.security import hash_password
 from app.freshsales.client import FreshsalesClient
 from app.models.dashboard_user import DashboardUser
-from app.repositories import users_repo
+from app.repositories import events_repo, users_repo
 from app.schemas.auth import CreateUserRequest, CurrentUser
 from app.schemas.responses import MessageResponse, UserCreatedResponse, UsersListResponse
-from app.services import deal_sync, email_sync, reference_sync, task_sync
+from app.services import deal_sync, email_sync, reference_sync, task_sync, timeline_backfill
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -40,6 +40,18 @@ async def trigger_email_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await email_sync.run_email_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Email sync complete")
+
+
+@router.post("/backfill/timeline", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_timeline_backfill(session: SessionDep) -> MessageResponse:
+    """Seed deal_events history for deals that have none yet (spec §6C)."""
+    deal_ids = await events_repo.list_deal_ids_without_events(session)
+    async with FreshsalesClient() as client:
+        await timeline_backfill.run_timeline_backfill(session, client, deal_ids)
+    return MessageResponse(
+        status_code=status.HTTP_200_OK,
+        message=f"Timeline backfill complete ({len(deal_ids)} deals)",
+    )
 
 
 @router.post("/users", dependencies=[Depends(require_role("superadmin"))],
