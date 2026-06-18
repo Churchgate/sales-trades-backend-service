@@ -191,11 +191,13 @@ class FreshsalesClient:
     # --- Timeline (for backfill) ---
 
     async def paginate_timeline(self, deal_id: int) -> AsyncIterator[dict[str, Any]]:
-        """Yield timeline feed entries, paginating via meta.has_next (no total count)."""
+        """Yield timeline feed entries, paginating via meta.has_next (no total count).
+
+        The response wraps the list under `timeline_feeds` (verified live)."""
         page = 1
         while True:
             data = await self.get(endpoints.deal_timeline_feeds(deal_id, page=page))
-            for feed in data.get("timeline", []):
+            for feed in data.get("timeline_feeds", []):
                 yield feed
             if not data.get("meta", {}).get("has_next"):
                 break
