@@ -65,3 +65,20 @@ def require_role(*roles: str) -> Callable[[DashboardUser], Awaitable[DashboardUs
         return user
 
     return _check
+
+
+def get_owner_scope(user: CurrentUserDep) -> int | None:
+    """Owner-id filter for analytics queries. `rep` users are restricted to their own
+    linked Freshsales owner; `gmd`/`sales_manager`/`superadmin` see everything (`None`).
+    A rep with no linked owner gets 403 rather than silently seeing all deals."""
+    if user.role == "rep":
+        if user.owner_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Rep account is not linked to a Freshsales owner",
+            )
+        return user.owner_id
+    return None
+
+
+OwnerScopeDep = Annotated[int | None, Depends(get_owner_scope)]

@@ -84,7 +84,11 @@ async def ingest_webhook(
         )
 
     known_owner_ids = {o.id for o in await reference_repo.list_owners(session)}
-    raw_owner_id = webhook.deal_owner_id if webhook.deal_owner_id is not None else (existing.owner_id if existing else None)
+    raw_owner_id = (
+        webhook.deal_owner_id
+        if webhook.deal_owner_id is not None
+        else (existing.owner_id if existing else None)
+    )
     new_owner_id: int | None = raw_owner_id if raw_owner_id in known_owner_ids else None
 
     occurred_at = parse_webhook_timestamp(webhook.deal_stage_updated_time) or datetime.now(UTC)
