@@ -51,3 +51,71 @@ class DataFreshnessResponse(AnalyticsResponse):
     reference_synced_at: datetime | None = None
     tasks_synced_at: datetime | None = None
     email_last_activity_at: datetime | None = None
+
+
+# --- Overview (per-business-line health) ---
+
+
+class BusinessLineHealth(BaseModel):
+    business_line: str
+    total_deals: int
+    open_deals: int
+    open_value: float
+    won_deals: int
+    won_value: float
+    lost_deals: int
+    win_rate: float | None  # won / (won + lost); None when nothing has closed
+    is_blended: bool = False  # the cross-line total — de-emphasise client-side
+
+
+class OverviewResponse(AnalyticsResponse):
+    business_lines: list[BusinessLineHealth]
+
+
+# --- Pipeline funnel ---
+
+
+class StageFunnelRow(BaseModel):
+    business_line: str
+    pipeline_id: int | None
+    pipeline_name: str | None
+    stage_id: int | None
+    stage_name: str | None
+    stage_position: int | None
+    forecast_type: str | None
+    deal_count: int
+    total_value: float
+
+
+class PipelineResponse(AnalyticsResponse):
+    stages: list[StageFunnelRow]
+
+
+# --- Active pipeline (true live pipeline) ---
+
+
+class ExcludedDeal(BaseModel):
+    deal_id: int
+    reason: str
+
+
+class ActivePipelineResponse(AnalyticsResponse):
+    live_deals: int
+    live_value: float
+    excluded_count: int
+    excluded: list[ExcludedDeal]
+
+
+# --- Revenue forecast ("what is likely to close") ---
+
+
+class RevenueMonthRow(BaseModel):
+    business_line: str
+    close_month: str | None  # 'YYYY-MM'; None for deals with no expected close date
+    won_value: float
+    open_value: float
+    weighted_open_value: float  # open value weighted by stage probability
+
+
+class RevenueResponse(AnalyticsResponse):
+    months: list[RevenueMonthRow]
