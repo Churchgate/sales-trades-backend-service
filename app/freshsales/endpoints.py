@@ -48,10 +48,13 @@ def deal_notes(deal_id: int) -> str:
 
 
 def deal_tasks(deal_id: int) -> str:
-    """Deal tasks."""
-    return f"/crm/sales/api/deals/{deal_id}/tasks"
+    """Deal tasks. Unlike most Suite endpoints this is served WITHOUT the `/api`
+    segment (spec §5) — the `/crm/sales/api/.../tasks` form 404s (verified live).
+    Response wraps the list under `tasks`."""
+    return f"/crm/sales/deals/{deal_id}/tasks"
 
 
 def deal_conversations(deal_id: int) -> str:
-    """Email conversations."""
-    return f"/crm/sales/api/deals/{deal_id}/conversations/all"
+    """Email conversations. Also served WITHOUT `/api` (spec §5; `/api/...` 404s,
+    verified live). Response wraps the list under `email_conversations`."""
+    return f"/crm/sales/deals/{deal_id}/conversations/all"

@@ -7,7 +7,7 @@ from app.models.dashboard_user import DashboardUser
 from app.repositories import users_repo
 from app.schemas.auth import CreateUserRequest, CurrentUser
 from app.schemas.responses import MessageResponse, UserCreatedResponse, UsersListResponse
-from app.services import deal_sync, reference_sync
+from app.services import deal_sync, email_sync, reference_sync, task_sync
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -26,6 +26,20 @@ async def trigger_deal_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await deal_sync.run_deal_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Deal sync complete")
+
+
+@router.post("/sync/tasks", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_task_sync(session: SessionDep) -> MessageResponse:
+    async with FreshsalesClient() as client:
+        await task_sync.run_task_sync(session, client)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Task sync complete")
+
+
+@router.post("/sync/emails", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_email_sync(session: SessionDep) -> MessageResponse:
+    async with FreshsalesClient() as client:
+        await email_sync.run_email_sync(session, client)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Email sync complete")
 
 
 @router.post("/users", dependencies=[Depends(require_role("superadmin"))],

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     run_scheduler: bool = True
     deal_sync_interval_minutes: int = 20
     reference_sync_interval_hours: int = 24
+    # Task + email activity syncs are per-deal (rate-limit sensitive, spec §7), so
+    # they run less often than the bulk deal sync.
+    activity_sync_interval_minutes: int = 60
     # Run the reference sync on app startup. Disable in dev so `fastapi dev`
     # auto-reloads don't hit Freshsales on every file save; trigger it manually
     # via POST /api/v1/admin/sync/reference instead.
