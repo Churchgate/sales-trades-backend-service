@@ -37,6 +37,7 @@ _TABLES = (
     "stages",
     "pipelines",
     "owners",
+    "deal_reasons",
 )
 
 

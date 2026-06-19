@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.deal_reason import DealReason
 from app.models.owner import Owner
 from app.models.pipeline import Pipeline
 from app.models.stage import Stage
@@ -67,3 +68,11 @@ async def list_owners(session: AsyncSession, *, active_only: bool = False) -> li
         stmt = stmt.where(Owner.is_active.is_(True))
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def upsert_deal_reason(session: AsyncSession, data: dict[str, Any]) -> None:
+    stmt = insert(DealReason).values(**data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[DealReason.id], set_={"name": stmt.excluded.name}
+    )
+    await session.execute(stmt)

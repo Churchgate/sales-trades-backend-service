@@ -354,20 +354,22 @@ async def get_next_actions(
 async def get_loss_reasons(
     session: AsyncSession, filters: AnalyticsFilters, owner_scope: int | None
 ) -> list[dict[str, Any]]:
-    """Closed-Lost deals grouped by raw `lost_reason` (the endpoint maps these onto
-    the audit's categories). Empty reason becomes '' so the endpoint can report the
-    % lost with no reason recorded (spec §B2 loss-reasons)."""
+    """Closed-Lost deals grouped by their canonical reason name, resolved from
+    `lost_reason_id` via the `deal_reasons` lookup (the endpoint maps names onto the
+    audit's categories). Deals with no reason resolve to '' so the endpoint can report
+    the % lost with no reason recorded (spec §B2 loss-reasons)."""
     where, params = build_filters(filters, owner_scope)
-    lost_clause = "forecast_type = 'Closed Lost'"
+    lost_clause = "de.forecast_type = 'Closed Lost'"
     where = f"{where} AND {lost_clause}" if where else f" WHERE {lost_clause}"
     sql = f"""
         SELECT
-            coalesce(nullif(trim(lost_reason), ''), '') AS reason,
+            coalesce(dr.name, '') AS reason,
             count(*) AS lost_deals,
             coalesce(sum({_VALUE_EXPR}), 0) AS lost_value
-        FROM deals_enriched
+        FROM deals_enriched de
+        LEFT JOIN deal_reasons dr ON de.lost_reason_id = dr.id
         {where}
-        GROUP BY 1
+        GROUP BY dr.name
     """
     return await _rows(session, sql, params)
 
@@ -399,33 +401,30 @@ async def get_ageing(
     return await _rows(session, sql, params)
 
 
-# Keyword → audit loss category. Heuristic substring match (lost_reason is free text);
-# tune against real values. The first matching category wins; order matters.
-_LOSS_CATEGORY_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
-    ("no budget", ("budget", "fund", "no money")),
-    ("pricing", ("pric", "expensive", "cost", "afford", "too high")),
-    ("competitor", ("competitor", "compet", "went with", "chose other", "lost to")),
-    ("poor follow-up", ("follow", "no response", "unresponsive", "ghost", "no reply")),
-    ("timing", ("timing", "postpone", "delay", "not ready", "next year", "on hold")),
-    ("wrong target", ("not qualified", "wrong fit", "not a fit", "wrong target", "unqualified")),
-    ("broker issue", ("broker", "agent")),
-    (
-        "product mismatch",
-        ("product", "feature", "requirement", "spec", "size", "location", "floor"),
-    ),
-]
+# Exact canonical-reason → audit category. The Freshsales account uses a fixed
+# `deal_reasons` lookup (verified live), so this is an exact map, not a heuristic. A
+# new/unmapped reason falls through to 'uncategorised'; a missing reason is reported
+# separately as 'no reason recorded'.
+_LOSS_CATEGORY_BY_REASON: dict[str, str] = {
+    "price is too high": "pricing",
+    "opted our rival": "competitor",
+    "no proper follow-up": "poor follow-up",
+    "appointment missed": "poor follow-up",
+    "need only in future": "timing",
+    "product not satisfying": "product mismatch",
+    "not interested": "wrong target",
+    "no requirement": "wrong target",
+    "junk lead": "wrong target",
+    "test": "uncategorised",
+}
 
 
 def categorize_loss_reason(reason: str | None) -> str:
-    """Map a free-text `lost_reason` onto an audit category. Empty → 'no reason
-    recorded'; unmatched non-empty → 'uncategorised'."""
+    """Map a canonical `deal_reasons` name onto an audit category. Empty → 'no reason
+    recorded'; unmapped non-empty → 'uncategorised'."""
     if not reason or not reason.strip():
         return "no reason recorded"
-    low = reason.lower()
-    for category, keywords in _LOSS_CATEGORY_KEYWORDS:
-        if any(keyword in low for keyword in keywords):
-            return category
-    return "uncategorised"
+    return _LOSS_CATEGORY_BY_REASON.get(reason.strip().lower(), "uncategorised")
 
 
 # --- Data integrity (B4) ---

@@ -59,6 +59,11 @@ async def test_reference_sync_excludes_test_pipeline_and_builds_resolver(
                 200, json={"users": [{"id": 100, "name": "Vinay", "email": "vinay@example.com"}]}
             )
         )
+        mock_router.get("/crm/sales/api/selector/deal_reasons").mock(
+            return_value=httpx.Response(
+                200, json={"deal_reasons": [{"id": 500, "name": "Price is too high"}]}
+            )
+        )
 
         async with FreshsalesClient() as client:
             resolver = await run_reference_sync(db_session, client)

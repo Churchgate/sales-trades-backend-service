@@ -55,8 +55,10 @@ def _parse_view_deal(deal: dict[str, Any]) -> dict[str, Any]:
         "expected_close_date": parse_iso_date(deal.get("expected_close")),
         "stage_updated_at": parse_iso_timestamp(deal.get("stage_updated_time")),
         "deal_created_at": parse_iso_timestamp(deal.get("created_at")),
-        "lost_reason": deal.get("lost_reason"),
-        "lost_reason_id": deal.get("lost_reason_id"),
+        # The selected lost/won reason is only present with `include=deal_reason`
+        # (verified live), under `deal_reason_id`; the text resolves via the
+        # `deal_reasons` lookup at query time.
+        "lost_reason_id": deal.get("deal_reason_id"),
         "age_days": deal.get("age"),
         "rotten_days": deal.get("rotten_days"),
         "sales_account_id": sales_account_id,

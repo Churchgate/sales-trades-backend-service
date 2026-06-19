@@ -11,14 +11,16 @@ pipeline object, so there is no need to call the separate stages endpoint.
 
 
 def deals_view(view_id: int, page: int = 1) -> str:
-    """Deals list for a saved view. `include=owner` sideloads owner_id (otherwise
-    absent from view records). Paginated, 25/page default."""
-    return f"/crm/sales/api/deals/view/{view_id}?include=owner&page={page}"
+    """Deals list for a saved view. `include=owner,deal_reason` sideloads owner_id and
+    deal_reason_id (both absent from bare view records; verified live). Paginated,
+    25/page default."""
+    return f"/crm/sales/api/deals/view/{view_id}?include=owner,deal_reason&page={page}"
 
 
 def deal_detail(deal_id: int) -> str:
-    """Full deal record (wrapped in `deal`) incl. custom_field; include=owner adds owner_id."""
-    return f"/crm/sales/api/deals/{deal_id}?include=owner"
+    """Full deal record (wrapped in `deal`) incl. custom_field; `include=owner,deal_reason`
+    adds owner_id and the lost/won deal_reason_id (verified live)."""
+    return f"/crm/sales/api/deals/{deal_id}?include=owner,deal_reason"
 
 
 def filtered_search_deal(page: int = 1) -> str:
@@ -35,6 +37,12 @@ def deal_pipelines() -> str:
 def owners() -> str:
     """All owners/users (response top-level key is `users`). Cache, refresh daily."""
     return "/crm/sales/api/selector/owners"
+
+
+def deal_reasons() -> str:
+    """Lost/won deal-reason lookup (id -> name) under key `deal_reasons`. Cache,
+    refresh daily."""
+    return "/crm/sales/api/selector/deal_reasons"
 
 
 def deal_timeline_feeds(deal_id: int, page: int = 1) -> str:
