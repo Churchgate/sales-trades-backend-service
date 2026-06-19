@@ -426,3 +426,49 @@ def categorize_loss_reason(reason: str | None) -> str:
         if any(keyword in low for keyword in keywords):
             return category
     return "uncategorised"
+
+
+# --- Data integrity (B4) ---
+
+
+async def get_data_quality(
+    session: AsyncSession, filters: AnalyticsFilters, owner_scope: int | None
+) -> dict[str, Any]:
+    """Deal-level integrity counts: missing owner/stage/pipeline/value and deals that
+    share a name with another deal (likely duplicates). Backs the DB-integrity section
+    (spec §B4). Contact-level checks are out of scope until contacts are ingested."""
+    where, params = build_filters(filters, owner_scope)
+    counts = (
+        await _rows(
+            session,
+            f"""
+            SELECT
+                count(*) AS total_deals,
+                count(*) FILTER (WHERE owner_id IS NULL) AS missing_owner,
+                count(*) FILTER (WHERE stage_id IS NULL) AS missing_stage,
+                count(*) FILTER (WHERE pipeline_id IS NULL) AS missing_pipeline,
+                count(*) FILTER (WHERE base_currency_amount IS NULL AND amount IS NULL)
+                    AS missing_value
+            FROM deals_enriched
+            {where}
+            """,
+            params,
+        )
+    )[0]
+    dup_where = f"{where} AND name IS NOT NULL" if where else " WHERE name IS NOT NULL"
+    duplicates = (
+        await _rows(
+            session,
+            f"""
+            SELECT coalesce(sum(c), 0) AS duplicate_name_deals FROM (
+                SELECT count(*) AS c
+                FROM deals_enriched
+                {dup_where}
+                GROUP BY lower(trim(name))
+                HAVING count(*) > 1
+            ) groups
+            """,
+            params,
+        )
+    )[0]
+    return {**counts, **duplicates}

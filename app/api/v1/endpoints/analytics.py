@@ -12,8 +12,10 @@ from app.schemas.responses import (
     AgeingResponse,
     BusinessLineHealth,
     DataFreshnessResponse,
+    DataQualityResponse,
     ExcludedDeal,
     LeadSourceResponse,
+    LeadsStatusResponse,
     LossReasonCategory,
     LossReasonsResponse,
     NextActionsResponse,
@@ -316,4 +318,44 @@ async def lead_source(
             "leads module is not yet synced (see /analytics/leads-status)."
         ),
         sources=[],
+    )
+
+
+@router.get("/data-quality")
+async def data_quality(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> DataQualityResponse:
+    """Deal-integrity counts: missing owner/stage/pipeline/value and likely duplicates
+    (deals sharing a name). Contact-level checks await contact ingestion."""
+    row = await analytics_repo.get_data_quality(session, filters, owner_scope)
+    return DataQualityResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        total_deals=row["total_deals"],
+        missing_owner=row["missing_owner"],
+        missing_stage=row["missing_stage"],
+        missing_pipeline=row["missing_pipeline"],
+        missing_value=row["missing_value"],
+        duplicate_name_deals=row["duplicate_name_deals"],
+        notes=[
+            "Contact-level checks (phone reachability, orphaned contacts) are "
+            "unavailable — contacts are not yet ingested.",
+            "Lead source is not a deal field; see /analytics/lead-source.",
+        ],
+    )
+
+
+@router.get("/leads-status")
+async def leads_status(session: SessionDep) -> LeadsStatusResponse:
+    """Explicit flag that the top-of-funnel leads module is not yet ingested, so the
+    funnel starts at deals — the UI should surface this gap prominently (spec §B4)."""
+    return LeadsStatusResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        leads_ingested=False,
+        message=(
+            "The leads module is not yet ingested. All analytics start at the deal "
+            "stage; top-of-funnel lead volume and lead→deal conversion are not "
+            "represented. Surface this as a prominent gap in the dashboard."
+        ),
     )
