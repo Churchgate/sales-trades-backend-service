@@ -22,8 +22,10 @@ from app.schemas.responses import (
     NextActionsResponse,
     OverviewResponse,
     OwnerAccountability,
+    OwnerResponseTime,
     OwnersResponse,
     PipelineResponse,
+    ResponseTimesResponse,
     RevenueMonthRow,
     RevenueResponse,
     StageFunnelRow,
@@ -423,4 +425,36 @@ async def trends(
         comparison_date=comparison_date,
         series=series,
         week_over_week=week_over_week,
+    )
+
+
+@router.get("/response-times")
+async def response_times(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> ResponseTimesResponse:
+    """Per-owner time-to-first-outreach (first outgoing email minus deal_created_at,
+    spec §6D), plus how many deals have had no outreach at all."""
+    rows = await analytics_repo.get_response_times(session, filters, owner_scope)
+    owner_rows = [OwnerResponseTime(**row) for row in rows]
+    # Overall mean weighted by deals with outreach (an owner's avg covers exactly its
+    # outreach deals), so this is the true per-deal average first-response time.
+    total = sum(o.deals_with_outreach for o in owner_rows)
+    overall = (
+        round(
+            sum(
+                o.avg_first_response_days * o.deals_with_outreach
+                for o in owner_rows
+                if o.avg_first_response_days is not None
+            )
+            / total,
+            1,
+        )
+        if total
+        else None
+    )
+    return ResponseTimesResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        overall_avg_first_response_days=overall,
+        owners=owner_rows,
     )

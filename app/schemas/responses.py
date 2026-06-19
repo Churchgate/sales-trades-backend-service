@@ -263,3 +263,19 @@ class TrendsResponse(AnalyticsResponse):
     comparison_date: date | None  # the snapshot ~7 days before current (None if absent)
     series: list[TrendPoint]  # total pipeline value/count per snapshot date
     week_over_week: list[StageTrendRow]  # current vs comparison, by stage
+
+
+# --- First-response time ("time to first outreach", spec §6D) ---
+
+
+class OwnerResponseTime(BaseModel):
+    owner_id: int | None
+    owner_name: str
+    deals_with_outreach: int
+    deals_without_outreach: int
+    avg_first_response_days: float | None  # None when no deal has had outreach
+
+
+class ResponseTimesResponse(AnalyticsResponse):
+    overall_avg_first_response_days: float | None
+    owners: list[OwnerResponseTime]
