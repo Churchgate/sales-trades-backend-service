@@ -227,6 +227,21 @@ _HAS_OPEN_TASK = (
     "EXISTS (SELECT 1 FROM tasks_snapshot t WHERE t.deal_id = de.deal_id AND t.status = 'open')"
 )
 
+# Open tasks past their due date on the deal `de` — the overdue-follow-up count
+# (spec §6E, Vinay's #1 priority).
+_OVERDUE_TASKS = (
+    "(SELECT count(*) FROM tasks_snapshot t WHERE t.deal_id = de.deal_id "
+    "AND t.status = 'open' AND t.due_date < now())"
+)
+
+# Whether the deal has a follow-up date: an expected close date, or an open task
+# with a due date.
+_HAS_FOLLOW_UP_DATE = (
+    "(de.expected_close_date IS NOT NULL OR EXISTS ("
+    "SELECT 1 FROM tasks_snapshot t WHERE t.deal_id = de.deal_id "
+    "AND t.status = 'open' AND t.due_date IS NOT NULL))"
+)
+
 
 def _open_where(
     filters: AnalyticsFilters, owner_scope: int | None
@@ -281,6 +296,8 @@ async def get_owner_accountability(
                     AS days_since_stage_move,
                 EXTRACT(EPOCH FROM (now() - {_LAST_ACTIVITY})) / 86400.0 AS days_since_activity,
                 {_HAS_OPEN_TASK} AS has_open_task,
+                {_HAS_FOLLOW_UP_DATE} AS has_follow_up_date,
+                {_OVERDUE_TASKS} AS overdue_task_count,
                 EXISTS (
                     SELECT 1 FROM deal_events ev
                     WHERE ev.deal_id = de.deal_id AND ev.event_type = 'stage_change'
@@ -304,6 +321,10 @@ async def get_owner_accountability(
             ), 0) AS stale_value,
             count(*) FILTER (WHERE forecast_type = 'Open' AND NOT has_open_task)
                 AS no_next_action,
+            count(*) FILTER (WHERE forecast_type = 'Open' AND NOT has_follow_up_date)
+                AS no_follow_up_date,
+            coalesce(sum(overdue_task_count) FILTER (WHERE forecast_type = 'Open'), 0)
+                AS overdue_tasks,
             count(*) FILTER (
                 WHERE forecast_type = 'Open'
                   AND coalesce(days_since_activity, 1e9) > :stale_days
@@ -331,14 +352,13 @@ async def get_next_actions(
             count(*) FILTER (WHERE has_open_task) AS with_next_task,
             count(*) FILTER (WHERE has_follow_up_date) AS with_follow_up_date,
             count(*) FILTER (WHERE coalesce(days_since_activity, 1e9) <= :stale_days)
-                AS with_recent_activity
+                AS with_recent_activity,
+            coalesce(sum(overdue_task_count), 0) AS overdue_tasks
         FROM (
             SELECT
                 {_HAS_OPEN_TASK} AS has_open_task,
-                (de.expected_close_date IS NOT NULL OR EXISTS (
-                    SELECT 1 FROM tasks_snapshot t
-                    WHERE t.deal_id = de.deal_id AND t.status = 'open' AND t.due_date IS NOT NULL
-                )) AS has_follow_up_date,
+                {_HAS_FOLLOW_UP_DATE} AS has_follow_up_date,
+                {_OVERDUE_TASKS} AS overdue_task_count,
                 EXTRACT(EPOCH FROM (now() - {_LAST_ACTIVITY})) / 86400.0 AS days_since_activity
             FROM deals_enriched de
             {where}
@@ -346,8 +366,8 @@ async def get_next_actions(
     """
     rows = await _rows(session, sql, params)
     return rows[0] if rows else {
-        "open_deals": 0, "with_next_task": 0,
-        "with_follow_up_date": 0, "with_recent_activity": 0,
+        "open_deals": 0, "with_next_task": 0, "with_follow_up_date": 0,
+        "with_recent_activity": 0, "overdue_tasks": 0,
     }
 
 

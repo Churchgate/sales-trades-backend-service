@@ -92,6 +92,8 @@ async def test_owner_accountability(db_session: AsyncSession) -> None:
     assert rep100.win_rate == 1.0  # 1 won / 0 lost
     assert rep100.stale_value == 1000  # d1
     assert rep100.no_next_action == 1  # d1 has no open task
+    assert rep100.no_follow_up_date == 1  # d1 (no close date, no task due); d2 has a task due
+    assert rep100.overdue_tasks == 1  # d2's open task is past due
     assert rep100.no_recent_activity == 1  # d1
     assert rep100.deals_progressed == 0
 
@@ -108,6 +110,7 @@ async def test_next_actions(db_session: AsyncSession) -> None:
     assert resp.with_next_task == 1  # only d2
     assert resp.with_recent_activity == 2  # d2 + d6
     assert resp.with_next_task_pct == 33.3
+    assert resp.overdue_tasks == 1  # d2's open task is past due
 
 
 async def test_loss_reasons_categorised(db_session: AsyncSession) -> None:

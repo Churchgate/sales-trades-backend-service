@@ -234,6 +234,8 @@ async def owners(
                 won_value=row["won_value"],
                 stale_value=row["stale_value"],
                 no_next_action=row["no_next_action"],
+                no_follow_up_date=row["no_follow_up_date"],
+                overdue_tasks=row["overdue_tasks"],
                 no_recent_activity=row["no_recent_activity"],
                 deals_progressed=row["deals_progressed"],
                 last_crm_update=row["last_crm_update"],
@@ -262,6 +264,7 @@ async def next_actions(
         with_follow_up_date_pct=_pct(row["with_follow_up_date"], open_deals),
         with_recent_activity=row["with_recent_activity"],
         with_recent_activity_pct=_pct(row["with_recent_activity"], open_deals),
+        overdue_tasks=row["overdue_tasks"],
     )
 
 
