@@ -567,3 +567,39 @@ async def get_response_times(
         ORDER BY owner_name
     """
     return await _rows(session, sql, params)
+
+
+# --- Renewal alerts (cf_term_end_date, spec §3) ---
+
+
+async def get_renewals(
+    session: AsyncSession, filters: AnalyticsFilters, owner_scope: int | None, within_days: int
+) -> list[dict[str, Any]]:
+    """Leases (deals with a `cf_term_end_date`) expiring on or before `within_days`
+    from now, plus a 30-day overdue grace — the renewal alerts the spec §3 calls out.
+    Closed-Lost deals are excluded; ordered most-urgent first."""
+    where, params = build_filters(filters, owner_scope)
+    params["within_days"] = within_days
+    clause = (
+        "cf_term_end_date IS NOT NULL "
+        "AND forecast_type IS DISTINCT FROM 'Closed Lost' "
+        "AND cf_term_end_date <= current_date + make_interval(days => :within_days) "
+        "AND cf_term_end_date >= current_date - 30"
+    )
+    where = f"{where} AND {clause}" if where else f" WHERE {clause}"
+    sql = f"""
+        SELECT
+            deal_id,
+            name,
+            owner_id,
+            coalesce(business_line, 'Unassigned') AS business_line,
+            pipeline_name,
+            cf_project,
+            cf_term_end_date AS term_end_date,
+            (cf_term_end_date - current_date) AS days_until_expiry,
+            coalesce(cf_total_lease_amount, base_currency_amount, amount) AS value
+        FROM deals_enriched
+        {where}
+        ORDER BY cf_term_end_date ASC
+    """
+    return await _rows(session, sql, params)

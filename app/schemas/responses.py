@@ -282,3 +282,26 @@ class OwnerResponseTime(BaseModel):
 class ResponseTimesResponse(AnalyticsResponse):
     overall_avg_first_response_days: float | None
     owners: list[OwnerResponseTime]
+
+
+# --- Renewal alerts (lease expiries, spec §3) ---
+
+
+class RenewalDeal(BaseModel):
+    deal_id: int
+    name: str | None
+    owner_id: int | None
+    business_line: str | None
+    pipeline_name: str | None
+    cf_project: str | None
+    term_end_date: date
+    days_until_expiry: int  # negative = already expired (overdue renewal)
+    value: float | None
+
+
+class RenewalsResponse(AnalyticsResponse):
+    within_days: int
+    upcoming_count: int  # expiring within the window (days_until_expiry >= 0)
+    overdue_count: int  # term already ended but deal not Closed-Lost
+    total_value: float
+    renewals: list[RenewalDeal]
