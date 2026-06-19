@@ -119,3 +119,102 @@ class RevenueMonthRow(BaseModel):
 
 class RevenueResponse(AnalyticsResponse):
     months: list[RevenueMonthRow]
+
+
+# --- Staleness (stale by stage AND owner) ---
+
+
+class StalenessBucket(BaseModel):
+    key: str  # stage name or owner name
+    stale_deals: int
+    stale_value: float
+
+
+class StalenessResponse(AnalyticsResponse):
+    stale_days: int
+    definition: str  # echoes the staleness definition + denominator
+    open_deals: int  # denominator
+    stale_by_stage_move: int  # open deals with no stage move in > stale_days
+    stale_value: float
+    no_activity: int  # open deals with no activity of any kind in > stale_days
+    by_stage: list[StalenessBucket]
+    by_owner: list[StalenessBucket]
+
+
+# --- Owner accountability ---
+
+
+class OwnerAccountability(BaseModel):
+    owner_id: int | None
+    owner_name: str
+    total_deals: int
+    open_deals: int
+    won_deals: int
+    lost_deals: int
+    win_rate: float | None
+    open_value: float
+    won_value: float
+    stale_value: float  # open value with no stage move in > stale_days
+    no_next_action: int  # open deals with no open task
+    no_recent_activity: int  # open deals with no activity in > stale_days
+    deals_progressed: int  # open deals with a stage advance in the last stale_days
+    last_crm_update: datetime | None
+
+
+class OwnersResponse(AnalyticsResponse):
+    stale_days: int
+    owners: list[OwnerAccountability]
+
+
+# --- Next-action / follow-up discipline ---
+
+
+class NextActionsResponse(AnalyticsResponse):
+    stale_days: int
+    open_deals: int
+    with_next_task: int
+    with_next_task_pct: float
+    with_follow_up_date: int
+    with_follow_up_date_pct: float
+    with_recent_activity: int
+    with_recent_activity_pct: float
+
+
+# --- Loss reasons by category ---
+
+
+class LossReasonCategory(BaseModel):
+    category: str
+    lost_deals: int
+    lost_value: float
+
+
+class LossReasonsResponse(AnalyticsResponse):
+    total_lost: int
+    no_reason_pct: float  # % of lost deals with no reason recorded
+    categories: list[LossReasonCategory]
+
+
+# --- Ageing by stage & owner ---
+
+
+class AgeingBucketRow(BaseModel):
+    key: str  # stage name or owner name
+    bucket_0_30: int
+    bucket_30_90: int
+    bucket_90_365: int
+    bucket_365_plus: int
+
+
+class AgeingResponse(AnalyticsResponse):
+    by_stage: list[AgeingBucketRow]
+    by_owner: list[AgeingBucketRow]
+
+
+# --- Lead source ---
+
+
+class LeadSourceResponse(AnalyticsResponse):
+    available: bool
+    reason: str | None = None
+    sources: list[dict[str, object]] = []

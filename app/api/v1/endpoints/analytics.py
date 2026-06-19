@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -7,14 +8,24 @@ from app.repositories import analytics_repo
 from app.schemas.analytics import AnalyticsFilters
 from app.schemas.responses import (
     ActivePipelineResponse,
+    AgeingBucketRow,
+    AgeingResponse,
     BusinessLineHealth,
     DataFreshnessResponse,
     ExcludedDeal,
+    LeadSourceResponse,
+    LossReasonCategory,
+    LossReasonsResponse,
+    NextActionsResponse,
     OverviewResponse,
+    OwnerAccountability,
+    OwnersResponse,
     PipelineResponse,
     RevenueMonthRow,
     RevenueResponse,
     StageFunnelRow,
+    StalenessBucket,
+    StalenessResponse,
 )
 
 # Authentication is shared across every analytics route at the router level; read
@@ -31,6 +42,10 @@ FiltersDep = Annotated[AnalyticsFilters, Query()]
 def _win_rate(won: int, lost: int) -> float | None:
     closed = won + lost
     return won / closed if closed else None
+
+
+def _pct(part: int, whole: int) -> float:
+    return round(100 * part / whole, 1) if whole else 0.0
 
 
 def _to_health(row: dict[str, object]) -> BusinessLineHealth:
@@ -136,4 +151,169 @@ async def revenue(
         status_code=status.HTTP_200_OK,
         data_as_of=await analytics_repo.get_data_as_of(session),
         months=[RevenueMonthRow(**row) for row in rows],
+    )
+
+
+@router.get("/staleness")
+async def staleness(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> StalenessResponse:
+    """Stale open deals by stage AND owner, surfacing both days-since-stage-move and
+    days-since-activity, with the definition + denominator echoed."""
+    rows = await analytics_repo.get_staleness(session, filters, owner_scope)
+    threshold = filters.stale_days
+
+    def _stale_move(row: dict[str, object]) -> bool:
+        days = row["days_since_stage_move"]
+        return days is not None and days > threshold
+
+    def _no_activity(row: dict[str, object]) -> bool:
+        days = row["days_since_activity"]
+        return days is not None and days > threshold
+
+    stale_rows = [row for row in rows if _stale_move(row)]
+    by_stage: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
+    by_owner: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
+    for row in stale_rows:
+        value = float(row["value"] or 0)
+        by_stage[row["stage_name"]][0] += 1
+        by_stage[row["stage_name"]][1] += value
+        by_owner[row["owner_name"]][0] += 1
+        by_owner[row["owner_name"]][1] += value
+
+    def _buckets(grouped: dict[str, list[float]]) -> list[StalenessBucket]:
+        return [
+            StalenessBucket(key=key, stale_deals=int(agg[0]), stale_value=agg[1])
+            for key, agg in sorted(grouped.items(), key=lambda kv: -kv[1][1])
+        ]
+
+    return StalenessResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        stale_days=threshold,
+        definition=(
+            f"Open deals with no stage movement in more than {threshold} days. "
+            f"Denominator: {len(rows)} open deals."
+        ),
+        open_deals=len(rows),
+        stale_by_stage_move=len(stale_rows),
+        stale_value=sum(float(row["value"] or 0) for row in stale_rows),
+        no_activity=sum(1 for row in rows if _no_activity(row)),
+        by_stage=_buckets(by_stage),
+        by_owner=_buckets(by_owner),
+    )
+
+
+@router.get("/owners")
+async def owners(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> OwnersResponse:
+    """Per-owner performance + accountability: win rate, open/won value, stale value,
+    #no-next-action, #no-recent-activity, #deals-progressed, last CRM update."""
+    rows = await analytics_repo.get_owner_accountability(session, filters, owner_scope)
+    return OwnersResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        stale_days=filters.stale_days,
+        owners=[
+            OwnerAccountability(
+                owner_id=row["owner_id"],
+                owner_name=row["owner_name"],
+                total_deals=row["total_deals"],
+                open_deals=row["open_deals"],
+                won_deals=row["won_deals"],
+                lost_deals=row["lost_deals"],
+                win_rate=_win_rate(row["won_deals"], row["lost_deals"]),
+                open_value=row["open_value"],
+                won_value=row["won_value"],
+                stale_value=row["stale_value"],
+                no_next_action=row["no_next_action"],
+                no_recent_activity=row["no_recent_activity"],
+                deals_progressed=row["deals_progressed"],
+                last_crm_update=row["last_crm_update"],
+            )
+            for row in rows
+        ],
+    )
+
+
+@router.get("/next-actions")
+async def next_actions(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> NextActionsResponse:
+    """Follow-up discipline: % of open deals with a next task, a follow-up/close date,
+    and recent activity."""
+    row = await analytics_repo.get_next_actions(session, filters, owner_scope)
+    open_deals = row["open_deals"]
+    return NextActionsResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        stale_days=filters.stale_days,
+        open_deals=open_deals,
+        with_next_task=row["with_next_task"],
+        with_next_task_pct=_pct(row["with_next_task"], open_deals),
+        with_follow_up_date=row["with_follow_up_date"],
+        with_follow_up_date_pct=_pct(row["with_follow_up_date"], open_deals),
+        with_recent_activity=row["with_recent_activity"],
+        with_recent_activity_pct=_pct(row["with_recent_activity"], open_deals),
+    )
+
+
+@router.get("/loss-reasons")
+async def loss_reasons(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> LossReasonsResponse:
+    """Lost deals mapped onto the audit's loss categories, with the % recorded with no
+    reason and an 'uncategorised' bucket for unmapped reasons."""
+    rows = await analytics_repo.get_loss_reasons(session, filters, owner_scope)
+    total_lost = sum(row["lost_deals"] for row in rows)
+    no_reason = sum(row["lost_deals"] for row in rows if not row["reason"])
+    grouped: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
+    for row in rows:
+        category = analytics_repo.categorize_loss_reason(row["reason"] or None)
+        grouped[category][0] += row["lost_deals"]
+        grouped[category][1] += float(row["lost_value"] or 0)
+    categories = [
+        LossReasonCategory(category=key, lost_deals=int(agg[0]), lost_value=agg[1])
+        for key, agg in sorted(grouped.items(), key=lambda kv: -kv[1][0])
+    ]
+    return LossReasonsResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        total_lost=total_lost,
+        no_reason_pct=_pct(no_reason, total_lost),
+        categories=categories,
+    )
+
+
+@router.get("/ageing")
+async def ageing(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> AgeingResponse:
+    """Open-deal age buckets (0-30 / 30-90 / 90-365 / 365+) by stage and by owner."""
+    by_stage = await analytics_repo.get_ageing(session, filters, owner_scope, group="stage")
+    by_owner = await analytics_repo.get_ageing(session, filters, owner_scope, group="owner")
+    return AgeingResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        by_stage=[AgeingBucketRow(**row) for row in by_stage],
+        by_owner=[AgeingBucketRow(**row) for row in by_owner],
+    )
+
+
+@router.get("/lead-source")
+async def lead_source(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> LeadSourceResponse:
+    """Channel performance — currently unavailable: no lead-source field is ingested
+    on deals and the leads module is not yet synced (rather than guess, we say so)."""
+    return LeadSourceResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        available=False,
+        reason=(
+            "Lead source is not ingested: deals carry no lead-source field and the "
+            "leads module is not yet synced (see /analytics/leads-status)."
+        ),
+        sources=[],
     )
