@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -236,3 +236,30 @@ class DataQualityResponse(AnalyticsResponse):
 class LeadsStatusResponse(AnalyticsResponse):
     leads_ingested: bool
     message: str
+
+
+# --- Trend history (B3) ---
+
+
+class TrendPoint(BaseModel):
+    snapshot_date: date
+    deal_count: int
+    total_value: float
+
+
+class StageTrendRow(BaseModel):
+    pipeline_name: str | None
+    stage_name: str | None
+    stage_position: int | None
+    current_deal_count: int
+    current_value: float
+    prev_deal_count: int
+    prev_value: float
+    value_delta: float  # current_value - prev_value
+
+
+class TrendsResponse(AnalyticsResponse):
+    current_date: date | None
+    comparison_date: date | None  # the snapshot ~7 days before current (None if absent)
+    series: list[TrendPoint]  # total pipeline value/count per snapshot date
+    week_over_week: list[StageTrendRow]  # current vs comparison, by stage

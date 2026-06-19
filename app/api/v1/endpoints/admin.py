@@ -7,7 +7,14 @@ from app.models.dashboard_user import DashboardUser
 from app.repositories import events_repo, users_repo
 from app.schemas.auth import CreateUserRequest, CurrentUser
 from app.schemas.responses import MessageResponse, UserCreatedResponse, UsersListResponse
-from app.services import deal_sync, email_sync, reference_sync, task_sync, timeline_backfill
+from app.services import (
+    daily_snapshot,
+    deal_sync,
+    email_sync,
+    reference_sync,
+    task_sync,
+    timeline_backfill,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -40,6 +47,13 @@ async def trigger_email_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await email_sync.run_email_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Email sync complete")
+
+
+@router.post("/snapshot/daily", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_daily_snapshot(session: SessionDep) -> MessageResponse:
+    """Roll up today's pipeline_daily_snapshot now (otherwise runs nightly)."""
+    await daily_snapshot.run_daily_snapshot(session)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Daily snapshot complete")
 
 
 @router.post("/backfill/timeline", dependencies=[Depends(require_role("gmd", "superadmin"))])
