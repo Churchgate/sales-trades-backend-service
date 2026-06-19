@@ -11,7 +11,13 @@ from app.core.database import session_scope
 from app.core.logging import configure_logging, get_logger
 from app.core.scheduler import create_scheduler
 from app.freshsales.client import FreshsalesClient
-from app.jobs.tasks import deal_sync_job, email_sync_job, reference_sync_job, task_sync_job
+from app.jobs.tasks import (
+    daily_snapshot_job,
+    deal_sync_job,
+    email_sync_job,
+    reference_sync_job,
+    task_sync_job,
+)
 from app.services import reference_sync
 
 logger = get_logger(__name__)
@@ -64,6 +70,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             minutes=settings.activity_sync_interval_minutes,
             kwargs={"state": app.state},
             id="email_sync",
+        )
+        scheduler.add_job(
+            daily_snapshot_job,
+            "cron",
+            hour=1,
+            minute=0,
+            kwargs={"state": app.state},
+            id="daily_snapshot",
         )
         scheduler.start()
         logger.info("scheduler started")

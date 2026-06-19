@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -26,8 +27,11 @@ from app.schemas.responses import (
     RevenueMonthRow,
     RevenueResponse,
     StageFunnelRow,
+    StageTrendRow,
     StalenessBucket,
     StalenessResponse,
+    TrendPoint,
+    TrendsResponse,
 )
 
 # Authentication is shared across every analytics route at the router level; read
@@ -358,4 +362,65 @@ async def leads_status(session: SessionDep) -> LeadsStatusResponse:
             "stage; top-of-funnel lead volume and lead→deal conversion are not "
             "represented. Surface this as a prominent gap in the dashboard."
         ),
+    )
+
+
+@router.get("/trends")
+async def trends(
+    session: SessionDep, owner_scope: OwnerScopeDep, filters: FiltersDep
+) -> TrendsResponse:
+    """Week-over-week pipeline movement from pipeline_daily_snapshot: a daily total
+    series plus current-vs-~7-days-ago value deltas by stage. Not owner-scoped (the
+    daily rollup has no owner dimension)."""
+    rows = await analytics_repo.get_trends_rows(session, filters)
+
+    series_map: dict[object, list[float]] = defaultdict(lambda: [0, 0.0])
+    for row in rows:
+        series_map[row["snapshot_date"]][0] += row["deal_count"] or 0
+        series_map[row["snapshot_date"]][1] += float(row["total_value"] or 0)
+    dates = sorted(series_map)
+    series = [
+        TrendPoint(snapshot_date=d, deal_count=int(series_map[d][0]), total_value=series_map[d][1])
+        for d in dates
+    ]
+
+    current_date = dates[-1] if dates else None
+    comparison_date = (
+        max((d for d in dates if d <= current_date - timedelta(days=7)), default=None)
+        if current_date
+        else None
+    )
+
+    current = {r["stage_id"]: r for r in rows if r["snapshot_date"] == current_date}
+    previous = (
+        {r["stage_id"]: r for r in rows if r["snapshot_date"] == comparison_date}
+        if comparison_date
+        else {}
+    )
+    week_over_week = []
+    for stage_id, row in current.items():
+        prev = previous.get(stage_id)
+        current_value = float(row["total_value"] or 0)
+        prev_value = float(prev["total_value"] or 0) if prev else 0.0
+        week_over_week.append(
+            StageTrendRow(
+                pipeline_name=row["pipeline_name"],
+                stage_name=row["stage_name"],
+                stage_position=row["stage_position"],
+                current_deal_count=row["deal_count"] or 0,
+                current_value=current_value,
+                prev_deal_count=(prev["deal_count"] or 0) if prev else 0,
+                prev_value=prev_value,
+                value_delta=current_value - prev_value,
+            )
+        )
+    week_over_week.sort(key=lambda r: (r.pipeline_name or "", r.stage_position or 0))
+
+    return TrendsResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        current_date=current_date,
+        comparison_date=comparison_date,
+        series=series,
+        week_over_week=week_over_week,
     )

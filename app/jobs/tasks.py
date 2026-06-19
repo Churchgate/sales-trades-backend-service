@@ -5,6 +5,7 @@ from starlette.datastructures import State
 from app.core.database import session_scope
 from app.core.logging import get_logger
 from app.core.scheduler import (
+    LOCK_KEY_DAILY_SNAPSHOT,
     LOCK_KEY_DEAL_SYNC,
     LOCK_KEY_EMAIL_SYNC,
     LOCK_KEY_REFERENCE_SYNC,
@@ -12,7 +13,7 @@ from app.core.scheduler import (
     run_with_advisory_lock,
 )
 from app.freshsales.client import FreshsalesClient
-from app.services import deal_sync, email_sync, reference_sync, task_sync
+from app.services import daily_snapshot, deal_sync, email_sync, reference_sync, task_sync
 
 logger = get_logger(__name__)
 
@@ -51,3 +52,12 @@ async def email_sync_job(state: State) -> None:
         logger.info("email sync job done")
 
     await run_with_advisory_lock(LOCK_KEY_EMAIL_SYNC, "email_sync", _run)
+
+
+async def daily_snapshot_job(state: State) -> None:
+    async def _run() -> None:
+        async with session_scope() as session:
+            await daily_snapshot.run_daily_snapshot(session)
+        logger.info("daily snapshot job done")
+
+    await run_with_advisory_lock(LOCK_KEY_DAILY_SNAPSHOT, "daily_snapshot", _run)

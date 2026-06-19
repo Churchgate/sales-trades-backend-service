@@ -472,3 +472,39 @@ async def get_data_quality(
         )
     )[0]
     return {**counts, **duplicates}
+
+
+# --- Trend history (B3) ---
+
+
+async def get_trends_rows(
+    session: AsyncSession, filters: AnalyticsFilters
+) -> list[dict[str, Any]]:
+    """Per (day, pipeline, stage) rows from `pipeline_daily_snapshot` for the trend
+    series and week-over-week comparison (spec §B3). Honours business_line/pipeline_id;
+    not owner-scoped — the daily rollup has no owner dimension."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if filters.business_line is not None:
+        clauses.append("p.business_line = :business_line")
+        params["business_line"] = filters.business_line
+    if filters.pipeline_id is not None:
+        clauses.append("s.pipeline_id = :pipeline_id")
+        params["pipeline_id"] = filters.pipeline_id
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"""
+        SELECT
+            s.snapshot_date,
+            p.name AS pipeline_name,
+            st.name AS stage_name,
+            st.position AS stage_position,
+            s.stage_id,
+            s.deal_count,
+            s.total_value
+        FROM pipeline_daily_snapshot s
+        JOIN pipelines p ON s.pipeline_id = p.id
+        JOIN stages st ON s.stage_id = st.id
+        {where}
+        ORDER BY s.snapshot_date
+    """
+    return await _rows(session, sql, params)
