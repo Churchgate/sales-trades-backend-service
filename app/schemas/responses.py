@@ -218,3 +218,21 @@ class LeadSourceResponse(AnalyticsResponse):
     available: bool
     reason: str | None = None
     sources: list[dict[str, object]] = []
+
+
+# --- Data integrity & leads gap (B4) ---
+
+
+class DataQualityResponse(AnalyticsResponse):
+    total_deals: int
+    missing_owner: int
+    missing_stage: int
+    missing_pipeline: int
+    missing_value: int
+    duplicate_name_deals: int  # deals sharing a name with another deal
+    notes: list[str]  # caveats about checks not yet possible (e.g. contacts)
+
+
+class LeadsStatusResponse(AnalyticsResponse):
+    leads_ingested: bool
+    message: str
