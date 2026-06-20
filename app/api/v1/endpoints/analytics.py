@@ -25,6 +25,8 @@ from app.schemas.responses import (
     OwnerResponseTime,
     OwnersResponse,
     PipelineResponse,
+    RenewalDeal,
+    RenewalsResponse,
     ResponseTimesResponse,
     RevenueMonthRow,
     RevenueResponse,
@@ -367,6 +369,29 @@ async def leads_status(session: SessionDep) -> LeadsStatusResponse:
             "stage; top-of-funnel lead volume and lead→deal conversion are not "
             "represented. Surface this as a prominent gap in the dashboard."
         ),
+    )
+
+
+@router.get("/renewals")
+async def renewals(
+    session: SessionDep,
+    owner_scope: OwnerScopeDep,
+    filters: FiltersDep,
+    within_days: Annotated[int, Query(ge=1, le=1095)] = 90,
+) -> RenewalsResponse:
+    """Lease renewal alerts: deals whose cf_term_end_date falls within `within_days`
+    (plus a 30-day overdue grace), ordered most-urgent first (spec §3)."""
+    rows = await analytics_repo.get_renewals(session, filters, owner_scope, within_days)
+    deals = [RenewalDeal(**row) for row in rows]
+    overdue = sum(1 for deal in deals if deal.days_until_expiry < 0)
+    return RenewalsResponse(
+        status_code=status.HTTP_200_OK,
+        data_as_of=await analytics_repo.get_data_as_of(session),
+        within_days=within_days,
+        upcoming_count=len(deals) - overdue,
+        overdue_count=overdue,
+        total_value=sum(deal.value or 0 for deal in deals),
+        renewals=deals,
     )
 
 
