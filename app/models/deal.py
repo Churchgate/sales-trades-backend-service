@@ -11,6 +11,10 @@ class DealSnapshot(SQLModel, table=True):
     __table_args__ = (
         Index("idx_deals_snapshot_pipeline_stage", "pipeline_id", "stage_id"),
         Index("idx_deals_snapshot_owner", "owner_id"),
+        # Analytics aggregation indexes (migration c4e7a1b9d2f3).
+        Index("idx_deals_snapshot_owner_stage_updated", "owner_id", "stage_id", "stage_updated_at"),
+        Index("idx_deals_snapshot_pipeline_close", "pipeline_id", "expected_close_date"),
+        Index("idx_deals_snapshot_created", "deal_created_at"),
     )
 
     deal_id: int = Field(sa_column=Column(BigInteger, primary_key=True))
@@ -45,6 +49,12 @@ class DealSnapshot(SQLModel, table=True):
     cf_term_end_date: date | None = None
     cf_deal_status: str | None = None
     cf_total_lease_amount: float | None = Field(default=None, sa_column=Column(Numeric))
+
+    deal_created_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True))
+    )
+    lost_reason: str | None = None
+    lost_reason_id: int | None = Field(default=None, sa_column=Column(BigInteger))
 
     custom_fields: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB))
     raw_payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB))

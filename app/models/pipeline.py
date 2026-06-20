@@ -12,7 +12,7 @@ class Pipeline(SQLModel, table=True):
     business_line: str
     is_default: bool = False
     is_active: bool = True
-    # `/api/deals/view/{view_id}` id for the scheduled deal sync (spec §6B). Not
+    # `/crm/sales/api/deals/view/{view_id}` id for the scheduled deal sync (spec §6B). Not
     # returned by any reference endpoint - configured manually and preserved
     # across reference syncs (never overwritten by upsert_pipeline).
     view_id: int | None = Field(default=None, sa_column=Column(BigInteger))

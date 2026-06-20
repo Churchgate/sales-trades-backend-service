@@ -3,10 +3,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Run Alembic migrations before starting the server on every deploy.
-# Alembic is idempotent — already-applied migrations are skipped safely.
-startCommand = "uv run alembic upgrade head && uv run fastapi run app/main.py --host 0.0.0.0 --port $PORT"
+startCommand = "sh -c 'uv run alembic upgrade head && uv run fastapi run app/main.py --host 0.0.0.0 --port ${PORT:-8000}'"
 healthcheckPath = "/healthz"
-healthcheckTimeout = 30
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

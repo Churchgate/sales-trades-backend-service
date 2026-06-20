@@ -23,6 +23,9 @@ class FreshsalesDealWebhook(BaseModel):
     deal_deal_pipeline_name: str | None = None
     deal_deal_stage_name: str | None = None
     deal_stage_updated_time: str | None = None
+    deal_created_at: str | None = None
     deal_expected_close: str | None = None
+    deal_lost_reason: str | None = None
+    deal_lost_reason_id: int | None = None
     deal_sales_account_id: int | None = None
     deal_sales_account_name: str | None = None

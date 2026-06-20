@@ -11,7 +11,13 @@ from app.core.database import session_scope
 from app.core.logging import configure_logging, get_logger
 from app.core.scheduler import create_scheduler
 from app.freshsales.client import FreshsalesClient
-from app.jobs.tasks import deal_sync_job, reference_sync_job
+from app.jobs.tasks import (
+    daily_snapshot_job,
+    deal_sync_job,
+    email_sync_job,
+    reference_sync_job,
+    task_sync_job,
+)
 from app.services import reference_sync
 
 logger = get_logger(__name__)
@@ -23,14 +29,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
 
     app.state.stage_resolver = None
-    try:
-        async with session_scope() as session, FreshsalesClient() as client:
-            app.state.stage_resolver = await reference_sync.run_reference_sync(session, client)
-        logger.info("startup reference sync complete")
-    except Exception:
-        logger.exception(
-            "startup reference sync failed; webhook ingestion will 503 until a sync succeeds"
-        )
+    if settings.sync_on_startup:
+        try:
+            async with session_scope() as session, FreshsalesClient() as client:
+                app.state.stage_resolver = await reference_sync.run_reference_sync(session, client)
+            logger.info("startup reference sync complete")
+        except Exception:
+            logger.exception(
+                "startup reference sync failed; webhook ingestion will 503 until a sync succeeds"
+            )
+    else:
+        logger.info("startup reference sync skipped (sync_on_startup=false)")
 
     scheduler = create_scheduler()
     if settings.run_scheduler:
@@ -47,6 +56,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             minutes=settings.deal_sync_interval_minutes,
             kwargs={"state": app.state},
             id="deal_sync",
+        )
+        scheduler.add_job(
+            task_sync_job,
+            "interval",
+            minutes=settings.activity_sync_interval_minutes,
+            kwargs={"state": app.state},
+            id="task_sync",
+        )
+        scheduler.add_job(
+            email_sync_job,
+            "interval",
+            minutes=settings.activity_sync_interval_minutes,
+            kwargs={"state": app.state},
+            id="email_sync",
+        )
+        scheduler.add_job(
+            daily_snapshot_job,
+            "cron",
+            hour=1,
+            minute=0,
+            kwargs={"state": app.state},
+            id="daily_snapshot",
         )
         scheduler.start()
         logger.info("scheduler started")

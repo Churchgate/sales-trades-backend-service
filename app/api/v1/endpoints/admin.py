@@ -4,10 +4,17 @@ from app.api.dependencies import SessionDep, require_role
 from app.core.security import hash_password
 from app.freshsales.client import FreshsalesClient
 from app.models.dashboard_user import DashboardUser
-from app.repositories import users_repo
+from app.repositories import events_repo, users_repo
 from app.schemas.auth import CreateUserRequest, CurrentUser
 from app.schemas.responses import MessageResponse, UserCreatedResponse, UsersListResponse
-from app.services import deal_sync, reference_sync
+from app.services import (
+    daily_snapshot,
+    deal_sync,
+    email_sync,
+    reference_sync,
+    task_sync,
+    timeline_backfill,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -26,6 +33,39 @@ async def trigger_deal_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await deal_sync.run_deal_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Deal sync complete")
+
+
+@router.post("/sync/tasks", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_task_sync(session: SessionDep) -> MessageResponse:
+    async with FreshsalesClient() as client:
+        await task_sync.run_task_sync(session, client)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Task sync complete")
+
+
+@router.post("/sync/emails", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_email_sync(session: SessionDep) -> MessageResponse:
+    async with FreshsalesClient() as client:
+        await email_sync.run_email_sync(session, client)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Email sync complete")
+
+
+@router.post("/snapshot/daily", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_daily_snapshot(session: SessionDep) -> MessageResponse:
+    """Roll up today's pipeline_daily_snapshot now (otherwise runs nightly)."""
+    await daily_snapshot.run_daily_snapshot(session)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Daily snapshot complete")
+
+
+@router.post("/backfill/timeline", dependencies=[Depends(require_role("gmd", "superadmin"))])
+async def trigger_timeline_backfill(session: SessionDep) -> MessageResponse:
+    """Seed deal_events history for deals that have none yet (spec §6C)."""
+    deal_ids = await events_repo.list_deal_ids_without_events(session)
+    async with FreshsalesClient() as client:
+        await timeline_backfill.run_timeline_backfill(session, client, deal_ids)
+    return MessageResponse(
+        status_code=status.HTTP_200_OK,
+        message=f"Timeline backfill complete ({len(deal_ids)} deals)",
+    )
 
 
 @router.post("/users", dependencies=[Depends(require_role("superadmin"))],
