@@ -528,3 +528,43 @@ async def get_trends_rows(
         ORDER BY s.snapshot_date
     """
     return await _rows(session, sql, params)
+
+
+# --- First-response time ("time to first outreach") ---
+
+
+async def get_response_times(
+    session: AsyncSession, filters: AnalyticsFilters, owner_scope: int | None
+) -> list[dict[str, Any]]:
+    """Per-owner time-to-first-outreach (spec §6D): days from `deal_created_at` to the
+    first outgoing email. Surfaces how many deals have/have-not had any outreach and
+    the average first-response time across those that have."""
+    where, params = build_filters(filters, owner_scope)
+    sql = f"""
+        WITH base AS (
+            SELECT
+                de.owner_id,
+                coalesce(o.display_name, 'Unassigned') AS owner_name,
+                de.deal_created_at,
+                (SELECT min(e.conversation_time) FROM email_activity e
+                 WHERE e.deal_id = de.deal_id AND e.direction = 'outgoing') AS first_outgoing
+            FROM deals_enriched de
+            LEFT JOIN owners o ON de.owner_id = o.id
+            {where}
+        )
+        SELECT
+            owner_id,
+            owner_name,
+            count(*) FILTER (
+                WHERE first_outgoing IS NOT NULL AND deal_created_at IS NOT NULL
+            ) AS deals_with_outreach,
+            count(*) FILTER (WHERE first_outgoing IS NULL) AS deals_without_outreach,
+            avg(EXTRACT(EPOCH FROM (first_outgoing - deal_created_at)) / 86400.0) FILTER (
+                WHERE first_outgoing IS NOT NULL AND deal_created_at IS NOT NULL
+                  AND first_outgoing >= deal_created_at
+            ) AS avg_first_response_days
+        FROM base
+        GROUP BY owner_id, owner_name
+        ORDER BY owner_name
+    """
+    return await _rows(session, sql, params)
