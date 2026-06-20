@@ -135,6 +135,9 @@ class FreshsalesClient:
     async def get_owners(self) -> dict[str, Any]:
         return await self.get(endpoints.owners())
 
+    async def get_deal_reasons(self) -> dict[str, Any]:
+        return await self.get(endpoints.deal_reasons())
+
     # --- Deals ---
 
     async def get_deal(self, deal_id: int) -> dict[str, Any]:

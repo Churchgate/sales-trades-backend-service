@@ -11,6 +11,7 @@ from app.api.v1.endpoints.analytics import (
     staleness,
 )
 from app.models.deal_event import DealEvent
+from app.models.deal_reason import DealReason
 from app.models.email_activity import EmailActivity
 from app.models.task import TaskSnapshot
 from app.repositories import deals_repo, reference_repo
@@ -43,21 +44,22 @@ async def _seed(session: AsyncSession) -> None:
         await reference_repo.upsert_owner(
             session, {"id": oid, "display_name": f"Rep{oid}", "email": None, "is_active": True}
         )
-    # id, stage, owner, value, stage_updated(days ago), age, lost_reason
+    session.add(DealReason(id=500, name="Price is too high"))  # -> pricing category
+    # id, stage, owner, value, stage_updated(days ago), age, lost_reason_id
     deals = [
-        (1, 10, 100, 1000, 60, 60, None),    # open, stale move, no activity
-        (2, 10, 100, 2000, 5, 5, None),      # open, fresh, has task + email
+        (1, 10, 100, 1000, 60, 60, None),  # open, stale move, no activity
+        (2, 10, 100, 2000, 5, 5, None),    # open, fresh, has task + email
         (3, 11, 100, 5000, 100, 100, None),  # won
-        (4, 12, 101, 800, 200, 200, "Too expensive"),  # lost, pricing
-        (5, 12, 101, 300, 400, 400, None),   # lost, no reason
-        (6, 10, 101, 400, 90, 900, None),    # open, stale move, recent event
+        (4, 12, 101, 800, 200, 200, 500),  # lost, reason -> pricing
+        (5, 12, 101, 300, 400, 400, None),  # lost, no reason
+        (6, 10, 101, 400, 90, 900, None),  # open, stale move, recent event
     ]
-    for did, sid, oid, value, moved, age, lost in deals:
+    for did, sid, oid, value, moved, age, reason_id in deals:
         await deals_repo.upsert_deal(
             session,
             {"deal_id": did, "pipeline_id": 1, "stage_id": sid, "owner_id": oid,
              "amount": value, "stage_updated_at": _ago(moved), "age_days": age,
-             "lost_reason": lost},
+             "lost_reason_id": reason_id},
         )
     # d2: an open task (past due) + a recent email -> active, has next action.
     session.add(TaskSnapshot(task_id=1, deal_id=2, owner_id=100, status="open", due_date=_ago(1)))
