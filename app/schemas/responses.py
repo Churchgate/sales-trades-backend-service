@@ -156,6 +156,8 @@ class OwnerAccountability(BaseModel):
     won_value: float
     stale_value: float  # open value with no stage move in > stale_days
     no_next_action: int  # open deals with no open task
+    no_follow_up_date: int  # open deals with no expected-close/task due date
+    overdue_tasks: int  # open tasks past due on this owner's open deals (spec §6E)
     no_recent_activity: int  # open deals with no activity in > stale_days
     deals_progressed: int  # open deals with a stage advance in the last stale_days
     last_crm_update: datetime | None
@@ -178,6 +180,7 @@ class NextActionsResponse(AnalyticsResponse):
     with_follow_up_date_pct: float
     with_recent_activity: int
     with_recent_activity_pct: float
+    overdue_tasks: int  # open tasks past due across the open deals (spec §6E)
 
 
 # --- Loss reasons by category ---
