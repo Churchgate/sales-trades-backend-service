@@ -94,7 +94,8 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_base_url],
+        # Sales dashboard (cookie auth) + the standalone booking frontend (public API).
+        allow_origins=[settings.frontend_base_url, settings.booking_frontend_base_url],
         allow_credentials=True,  # required for cookies
         allow_methods=["*"],
         allow_headers=["*"],

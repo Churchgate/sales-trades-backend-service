@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # --- Frontend ---
     frontend_base_url: str = "http://localhost:3000"
 
+    # --- Bookings / Email (SendGrid) ---
+    # Standalone booking frontend origin (CORS). The booking API is public, but the
+    # browser still needs this origin allow-listed for credentialed/fetch requests.
+    booking_frontend_base_url: str = "http://localhost:3001"
+    booking_tz: str = "Africa/Lagos"
+    sendgrid_api_key: str = ""
+    mail_from_email: str = "no-reply@example.com"
+    mail_from_name: str = "WTC Abuja Bookings"
+
     # --- JWT ---
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
