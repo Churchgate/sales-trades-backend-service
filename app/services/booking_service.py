@@ -116,6 +116,17 @@ async def cancel_booking(session: AsyncSession, access_code: str) -> Booking:
     booking = await bookings_repo.get_by_access_code(session, access_code)
     if booking is None:
         raise BookingNotFoundError(f"no booking for access code {access_code}")
+    return await _cancel(session, booking)
+
+
+async def cancel_booking_by_id(session: AsyncSession, booking_id: int) -> Booking:
+    booking = await bookings_repo.get_by_id(session, booking_id)
+    if booking is None:
+        raise BookingNotFoundError(f"no booking with id {booking_id}")
+    return await _cancel(session, booking)
+
+
+async def _cancel(session: AsyncSession, booking: Booking) -> Booking:
     if booking.status != STATUS_CANCELLED:
         booking.status = STATUS_CANCELLED
         booking = await bookings_repo.update_booking(session, booking)

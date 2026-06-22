@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Column, DateTime, func
+from sqlalchemy import BigInteger, Column, DateTime, String, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlmodel import Field, SQLModel
 
 
@@ -16,6 +17,10 @@ class Room(SQLModel, table=True):
     location: str | None = None
     capacity: int | None = None
     description: str | None = None
+    room_type: str | None = None  # e.g. 'Boardroom' | 'Conference Hall' | 'Meeting Room'
+    size_sqm: float | None = None
+    amenities: list[str] | None = Field(default=None, sa_column=Column(ARRAY(String)))
+    image_url: str | None = None
     is_active: bool = Field(default=True)
 
     created_at: datetime = Field(

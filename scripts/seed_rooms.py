@@ -17,17 +17,41 @@ from sqlalchemy import select
 from app.core.database import session_scope
 from app.models.room import Room
 
-# Edit to match the real venues.
+# Matches the WTC Abuja booking design (design_handoff_wtc_room_booking/README.md).
 ROOMS: list[dict[str, object]] = [
-    {"name": "Main Hall", "location": "Ground Floor", "capacity": 200,
-     "description": "Large event hall with stage and AV."},
-    {"name": "Boardroom A", "location": "3rd Floor", "capacity": 12,
-     "description": "Executive boardroom with video conferencing."},
-    {"name": "Boardroom B", "location": "3rd Floor", "capacity": 8,
-     "description": "Small meeting room."},
-    {"name": "Training Room", "location": "2nd Floor", "capacity": 30,
-     "description": "Flexible training/seminar space."},
+    {
+        "name": "Executive Boardroom", "location": "12th Floor", "capacity": 20,
+        "description": "Executive boardroom with video conferencing.",
+        "room_type": "Boardroom", "size_sqm": 85,
+        "amenities": [
+            "Projector", "Video Conferencing", "Whiteboard", "AC", "Wi-Fi",
+            "Catering Available",
+        ],
+        "image_url": "https://images.unsplash.com/photo-1497366216548-37526070297c",
+    },
+    {
+        "name": "Conference Hall A", "location": "5th Floor", "capacity": 40,
+        "description": "Large conference hall with stage and PA system.",
+        "room_type": "Conference Hall", "size_sqm": 140,
+        "amenities": [
+            "Dual Projectors", "PA System", "Stage", "AC", "Wi-Fi",
+            "Recording Equipment",
+        ],
+        "image_url": "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
+    },
+    {
+        "name": "Breakout Room B", "location": "3rd Floor", "capacity": 8,
+        "description": "Small meeting room for focused discussions.",
+        "room_type": "Meeting Room", "size_sqm": 32,
+        "amenities": ["Smart TV", "Whiteboard", "Video Call Ready", "AC", "Wi-Fi"],
+        "image_url": "https://images.unsplash.com/photo-1497366754035-f200968a6e72",
+    },
 ]
+
+_FIELDS = (
+    "location", "capacity", "description", "room_type", "size_sqm", "amenities",
+    "image_url",
+)
 
 
 async def seed_rooms() -> None:
@@ -40,9 +64,8 @@ async def seed_rooms() -> None:
                 session.add(Room(**spec, is_active=True))
                 print(f"  + created room: {spec['name']}")
             else:
-                existing.location = spec.get("location")  # type: ignore[assignment]
-                existing.capacity = spec.get("capacity")  # type: ignore[assignment]
-                existing.description = spec.get("description")  # type: ignore[assignment]
+                for field in _FIELDS:
+                    setattr(existing, field, spec.get(field))
                 existing.is_active = True
                 print(f"  ~ updated room: {spec['name']}")
         await session.commit()

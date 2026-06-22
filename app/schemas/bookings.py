@@ -25,6 +25,10 @@ class RoomOut(BaseModel):
     location: str | None = None
     capacity: int | None = None
     description: str | None = None
+    room_type: str | None = None
+    size_sqm: float | None = None
+    amenities: list[str] | None = None
+    image_url: str | None = None
 
 
 class BookingSlotOut(BaseModel):
@@ -45,6 +49,7 @@ class BookingOut(BaseModel):
     end_time: datetime
     access_code: str
     status: str
+    created_at: datetime
 
 
 # --- Responses (envelope-wrapped, like the rest of the API) ---
@@ -52,6 +57,10 @@ class BookingOut(BaseModel):
 
 class RoomsListResponse(BaseResponse):
     rooms: list[RoomOut]
+
+
+class RoomDetailResponse(BaseResponse):
+    room: RoomOut
 
 
 class RoomBookingsResponse(BaseResponse):
@@ -66,3 +75,19 @@ class BookingConfirmationResponse(BaseResponse):
 
 class BookingDetailResponse(BaseResponse):
     booking: BookingOut
+
+
+class BookingsListResponse(BaseResponse):
+    bookings: list[BookingOut]
+
+
+class BookingStats(BaseModel):
+    today_count: int
+    active_now_count: int
+    total_rooms: int
+    all_time_count: int
+
+
+class AdminBookingsResponse(BaseResponse):
+    bookings: list[BookingOut]
+    stats: BookingStats
