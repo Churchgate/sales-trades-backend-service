@@ -66,3 +66,18 @@ def deal_conversations(deal_id: int) -> str:
     """Email conversations. Also served WITHOUT `/api` (spec §5; `/api/...` 404s,
     verified live). Response wraps the list under `email_conversations`."""
     return f"/crm/sales/deals/{deal_id}/conversations/all"
+
+
+# --- Contacts (write — booth/stand lead sync) ---
+
+
+def contacts() -> str:
+    """Create a contact. Body wraps the record under `contact`."""
+    return "/crm/sales/api/contacts"
+
+
+def contact_upsert() -> str:
+    """Create-or-update a contact, deduped by a unique identifier (we use email).
+    Body: {"unique_identifier": {"email": ...}, "contact": {...}}. Response wraps
+    the record under `contact`."""
+    return "/crm/sales/api/contacts/upsert"

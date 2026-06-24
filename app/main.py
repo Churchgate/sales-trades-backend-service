@@ -15,6 +15,7 @@ from app.jobs.tasks import (
     daily_snapshot_job,
     deal_sync_job,
     email_sync_job,
+    lead_crm_sync_job,
     reference_sync_job,
     task_sync_job,
 )
@@ -79,6 +80,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             kwargs={"state": app.state},
             id="daily_snapshot",
         )
+        scheduler.add_job(
+            lead_crm_sync_job,
+            "interval",
+            minutes=settings.lead_crm_sync_interval_minutes,
+            kwargs={"state": app.state},
+            id="lead_crm_sync",
+        )
         scheduler.start()
         logger.info("scheduler started")
 
@@ -94,8 +102,13 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        # Sales dashboard (cookie auth) + the standalone booking frontend (public API).
-        allow_origins=[settings.frontend_base_url, settings.booking_frontend_base_url],
+        # Sales dashboard (cookie auth), the standalone booking frontend (public API),
+        # and the booth/event management dashboard.
+        allow_origins=[
+            settings.frontend_base_url,
+            settings.booking_frontend_base_url,
+            settings.dashboard_frontend_base_url,
+        ],
         allow_credentials=True,  # required for cookies
         allow_methods=["*"],
         allow_headers=["*"],

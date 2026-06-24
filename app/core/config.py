@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     mail_from_email: str = "no-reply@example.com"
     mail_from_name: str = "WTC Abuja Bookings"
 
+    # --- Booth/stand lead capture ---
+    # Management dashboard origin (CORS), if deployed separately from the API.
+    dashboard_frontend_base_url: str = "http://localhost:3002"
+    # Live Freshsales contact write-sync. Off by default so an event can run
+    # CSV-first (the guaranteed path) and flip this on once verified live.
+    freshsales_lead_sync_enabled: bool = False
+    lead_crm_sync_interval_minutes: int = 10
+
     # --- JWT ---
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"

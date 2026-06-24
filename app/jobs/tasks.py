@@ -8,12 +8,20 @@ from app.core.scheduler import (
     LOCK_KEY_DAILY_SNAPSHOT,
     LOCK_KEY_DEAL_SYNC,
     LOCK_KEY_EMAIL_SYNC,
+    LOCK_KEY_LEAD_CRM_SYNC,
     LOCK_KEY_REFERENCE_SYNC,
     LOCK_KEY_TASK_SYNC,
     run_with_advisory_lock,
 )
 from app.freshsales.client import FreshsalesClient
-from app.services import daily_snapshot, deal_sync, email_sync, reference_sync, task_sync
+from app.services import (
+    daily_snapshot,
+    deal_sync,
+    email_sync,
+    lead_crm_sync,
+    reference_sync,
+    task_sync,
+)
 
 logger = get_logger(__name__)
 
@@ -61,3 +69,12 @@ async def daily_snapshot_job(state: State) -> None:
         logger.info("daily snapshot job done")
 
     await run_with_advisory_lock(LOCK_KEY_DAILY_SNAPSHOT, "daily_snapshot", _run)
+
+
+async def lead_crm_sync_job(state: State) -> None:
+    async def _run() -> None:
+        async with session_scope() as session:
+            synced = await lead_crm_sync.sync_pending(session)
+        logger.info("lead crm sync job done", synced=synced)
+
+    await run_with_advisory_lock(LOCK_KEY_LEAD_CRM_SYNC, "lead_crm_sync", _run)
