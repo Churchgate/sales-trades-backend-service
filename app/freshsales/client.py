@@ -127,6 +127,14 @@ class FreshsalesClient:
         response.raise_for_status()
         return response.json()
 
+    # --- Contacts (write — booth/stand lead sync) ---
+
+    async def upsert_contact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create-or-update a contact (deduped server-side by email). Returns the
+        unwrapped `contact` object. `payload` is the full upsert body."""
+        data = await self.post(endpoints.contact_upsert(), payload)
+        return data.get("contact", data)
+
     # --- Reference data ---
 
     async def get_pipelines(self) -> dict[str, Any]:
