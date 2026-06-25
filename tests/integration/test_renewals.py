@@ -1,10 +1,14 @@
 from datetime import date, timedelta
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_user
 from app.api.v1.endpoints.analytics import renewals
+from app.core.database import get_session
+from app.main import create_app
+from app.models.dashboard_user import DashboardUser
 from app.repositories import deals_repo, reference_repo
-from app.schemas.analytics import AnalyticsFilters
 
 TODAY = date.today()
 
@@ -40,7 +44,7 @@ async def _seed(session: AsyncSession) -> None:
 
 async def test_renewals_window_and_overdue(db_session: AsyncSession) -> None:
     await _seed(db_session)
-    resp = await renewals(db_session, None, AnalyticsFilters(), within_days=90)
+    resp = await renewals(db_session, None, within_days=90)
 
     ids = {d.deal_id for d in resp.renewals}
     assert ids == {1, 3}  # d2 beyond window, d4 lost, d5 no date
@@ -57,5 +61,29 @@ async def test_renewals_window_and_overdue(db_session: AsyncSession) -> None:
 
 async def test_renewals_window_widens_with_within_days(db_session: AsyncSession) -> None:
     await _seed(db_session)
-    resp = await renewals(db_session, None, AnalyticsFilters(), within_days=365)
+    resp = await renewals(db_session, None, within_days=365)
     assert {d.deal_id for d in resp.renewals} == {1, 2, 3}  # d2 now inside the window
+
+
+async def test_renewals_route_accepts_query_params(db_session: AsyncSession) -> None:
+    """HTTP-level regression test: calling `renewals()` directly (above) bypasses
+    FastAPI's own query-parameter parsing, which is exactly where this endpoint used
+    to 422 with 'filters: Field required' — `FiltersDep`'s Query-model exploding
+    breaks when a sibling `Query()` param (`within_days`) is on the same route. Must
+    go through an actual HTTP request to catch a regression."""
+    await _seed(db_session)
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_current_user] = lambda: DashboardUser(
+        email="test@local", role="gmd", owner_id=None, hashed_password="x"
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.get("/api/v1/analytics/renewals?within_days=90&business_line=Leasing")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert {d["deal_id"] for d in body["renewals"]} == {1, 3}
