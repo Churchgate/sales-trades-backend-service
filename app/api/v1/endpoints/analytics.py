@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -376,11 +376,29 @@ async def leads_status(session: SessionDep) -> LeadsStatusResponse:
 async def renewals(
     session: SessionDep,
     owner_scope: OwnerScopeDep,
-    filters: FiltersDep,
     within_days: Annotated[int, Query(ge=1, le=1095)] = 90,
+    business_line: str | None = None,
+    pipeline_id: int | None = None,
+    owner_id: int | None = None,
+    stale_days: Annotated[int, Query(ge=1, le=365)] = 30,
+    as_of: date | None = None,
 ) -> RenewalsResponse:
     """Lease renewal alerts: deals whose cf_term_end_date falls within `within_days`
-    (plus a 30-day overdue grace), ordered most-urgent first (spec §3)."""
+    (plus a 30-day overdue grace), ordered most-urgent first (spec §3).
+
+    Filters are declared as individual params rather than `FiltersDep` — FastAPI's
+    Query-parameter-model exploding (`Annotated[AnalyticsFilters, Query()]`) breaks
+    when a sibling `Query()` parameter (`within_days`) is present on the same route,
+    always reporting `filters` itself as a missing required field. Verified via a
+    minimal repro independent of this app; affects this endpoint only since it's the
+    only one mixing `FiltersDep` with an extra Query param."""
+    filters = AnalyticsFilters(
+        business_line=business_line,
+        pipeline_id=pipeline_id,
+        owner_id=owner_id,
+        stale_days=stale_days,
+        as_of=as_of,
+    )
     rows = await analytics_repo.get_renewals(session, filters, owner_scope, within_days)
     deals = [RenewalDeal(**row) for row in rows]
     overdue = sum(1 for deal in deals if deal.days_until_expiry < 0)
