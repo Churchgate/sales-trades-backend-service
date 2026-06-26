@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.dependencies import SessionDep, require_role
+from app.api.dependencies import CurrentUserDep, SessionDep, require_role
 from app.core.security import generate_temp_password, hash_password
 from app.freshsales.client import FreshsalesClient
 from app.models.dashboard_user import DashboardUser
@@ -20,7 +20,7 @@ from app.services import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.post("/sync/reference", dependencies=[Depends(require_role("gmd", "superadmin"))])
+@router.post("/sync/reference", dependencies=[Depends(require_role("admin", "superadmin"))])
 async def trigger_reference_sync(request: Request, session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         request.app.state.stage_resolver = await reference_sync.run_reference_sync(
@@ -29,35 +29,35 @@ async def trigger_reference_sync(request: Request, session: SessionDep) -> Messa
     return MessageResponse(status_code=status.HTTP_200_OK, message="Reference sync complete")
 
 
-@router.post("/sync/deals", dependencies=[Depends(require_role("gmd", "superadmin"))])
+@router.post("/sync/deals", dependencies=[Depends(require_role("admin", "superadmin"))])
 async def trigger_deal_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await deal_sync.run_deal_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Deal sync complete")
 
 
-@router.post("/sync/tasks", dependencies=[Depends(require_role("gmd", "superadmin"))])
+@router.post("/sync/tasks", dependencies=[Depends(require_role("admin", "superadmin"))])
 async def trigger_task_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await task_sync.run_task_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Task sync complete")
 
 
-@router.post("/sync/emails", dependencies=[Depends(require_role("gmd", "superadmin"))])
+@router.post("/sync/emails", dependencies=[Depends(require_role("admin", "superadmin"))])
 async def trigger_email_sync(session: SessionDep) -> MessageResponse:
     async with FreshsalesClient() as client:
         await email_sync.run_email_sync(session, client)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Email sync complete")
 
 
-@router.post("/snapshot/daily", dependencies=[Depends(require_role("gmd", "superadmin"))])
+@router.post("/snapshot/daily", dependencies=[Depends(require_role("admin", "superadmin"))])
 async def trigger_daily_snapshot(session: SessionDep) -> MessageResponse:
     """Roll up today's pipeline_daily_snapshot now (otherwise runs nightly)."""
     await daily_snapshot.run_daily_snapshot(session)
     return MessageResponse(status_code=status.HTTP_200_OK, message="Daily snapshot complete")
 
 
-@router.post("/backfill/timeline", dependencies=[Depends(require_role("gmd", "superadmin"))])
+@router.post("/backfill/timeline", dependencies=[Depends(require_role("admin", "superadmin"))])
 async def trigger_timeline_backfill(session: SessionDep) -> MessageResponse:
     """Seed deal_events history for deals that have none yet (spec §6C)."""
     deal_ids = await events_repo.list_deal_ids_without_events(session)
@@ -126,6 +126,23 @@ async def reset_user_password(email: str, session: SessionDep) -> UserCreatedRes
         temp_password=temp_password,
         email_sent=email_sent,
     )
+
+
+@router.delete("/users/{email}", dependencies=[Depends(require_role("superadmin"))])
+async def delete_user(
+    email: str, session: SessionDep, current_user: CurrentUserDep
+) -> MessageResponse:
+    """Remove a dashboard user — works whether they're a pending invite or active.
+    A superadmin can't delete their own account (avoids locking out the last admin)."""
+    if email.lower() == current_user.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="You can't delete your own account"
+        )
+    user = await users_repo.get_user_by_email(session, email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    await users_repo.delete_user(session, user)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="User deleted")
 
 
 @router.get("/users", dependencies=[Depends(require_role("superadmin"))])

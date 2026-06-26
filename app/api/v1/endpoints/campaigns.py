@@ -2,7 +2,7 @@
 
 Public, unauthenticated capture (the booth tablet + QR-to-phone form GET a
 campaign's config and POST leads). Staff-only admin reads (list/stats/CSV/resync)
-gated to gmd/superadmin — the management 'how did the event go' surface.
+gated to admin/superadmin — the management 'how did the event go' surface.
 """
 
 from typing import Annotated
@@ -31,7 +31,7 @@ from app.services import lead_crm_sync, lead_export, lead_service
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
-_ADMIN_ROLES = ("gmd", "superadmin")
+_ADMIN_ROLES = ("admin", "superadmin")
 
 
 def _campaign_out(campaign: Campaign) -> CampaignOut:
