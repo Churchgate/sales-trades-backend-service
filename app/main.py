@@ -51,10 +51,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             kwargs={"state": app.state},
             id="reference_sync",
         )
+        # Non-default-pipeline deals sync one HTTP request at a time (Freshsales'
+        # search endpoint returns thin records for them — see endpoints.py), so a
+        # full pass can take hours. Run it once nightly rather than on a short
+        # interval so it always has the full night to finish before morning,
+        # instead of repeatedly colliding with itself (spec §7 rate limit).
         scheduler.add_job(
             deal_sync_job,
-            "interval",
-            minutes=settings.deal_sync_interval_minutes,
+            "cron",
+            hour=3,
+            minute=0,
+            timezone="Africa/Lagos",
             kwargs={"state": app.state},
             id="deal_sync",
         )

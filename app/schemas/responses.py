@@ -24,6 +24,11 @@ class MeResponse(BaseResponse):
 
 class UserCreatedResponse(BaseResponse):
     user: CurrentUser
+    # The temporary password is returned so the admin can pass it on directly when
+    # email delivery isn't configured (or as a fallback if a send fails). Only ever
+    # exposed on this superadmin-only endpoint.
+    temp_password: str | None = None
+    email_sent: bool = False
 
 
 class UsersListResponse(BaseResponse):

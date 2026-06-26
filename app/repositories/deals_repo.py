@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,14 @@ async def upsert_deal(session: AsyncSession, data: dict[str, Any]) -> None:
         for col in _UPSERTABLE_COLUMNS
         if col in data
     }
+    # `updated_at`/`last_synced_at` carry `onupdate=func.now()`, but SQLAlchemy only
+    # applies onupdate to ORM/Core UPDATE statements — it is NOT injected into an
+    # INSERT ... ON CONFLICT DO UPDATE set clause. So without this they'd keep their
+    # original insert timestamp forever, and the dashboard's "data as of" (which reads
+    # max(last_synced_at)) would show stale even right after a successful sync. Bump
+    # them explicitly on every upsert.
+    update_cols["updated_at"] = func.now()
+    update_cols["last_synced_at"] = func.now()
     stmt = stmt.on_conflict_do_update(index_elements=[DealSnapshot.deal_id], set_=update_cols)
     await session.execute(stmt)
 

@@ -1,5 +1,7 @@
 import httpx
+import pytest
 import respx
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -73,3 +75,72 @@ async def test_deal_sync_covers_default_and_non_default_pipelines(
     assert {d.deal_id for d in other_deals} == {2002}
     assert other_deals[0].stage_id == 20
     assert other_deals[0].owner_id == 100
+
+
+async def test_upsert_bumps_last_synced_at_on_update(db_session: AsyncSession) -> None:
+    """Re-syncing an existing deal must move `last_synced_at` forward — the dashboard's
+    'data as of' badge reads max(last_synced_at), so a refresh that didn't bump it
+    showed stale data. (The column's `onupdate=func.now()` doesn't fire for
+    INSERT ... ON CONFLICT DO UPDATE, so the upsert sets it explicitly.)"""
+    await _seed_reference(db_session)
+    deal = {"deal_id": 5001, "pipeline_id": 1, "stage_id": 10, "name": "D", "amount": "1"}
+    await deals_repo.upsert_deal(db_session, deal)
+    await db_session.commit()
+
+    # Force the timestamp to look old, as if first synced days ago.
+    await db_session.execute(
+        text("UPDATE deals_snapshot SET last_synced_at = now() - interval '5 days' "
+             "WHERE deal_id = 5001")
+    )
+    await db_session.commit()
+
+    await deals_repo.upsert_deal(db_session, {**deal, "amount": "2"})
+    await db_session.commit()
+
+    row = await deals_repo.get_deal(db_session, 5001)
+    age = (await db_session.execute(text("SELECT now() - last_synced_at FROM deals_snapshot "
+                                         "WHERE deal_id = 5001"))).scalar_one()
+    assert age.total_seconds() < 60  # bumped to ~now, not still 5 days old
+    assert row.amount == 2  # field refreshed too
+
+
+async def test_deal_sync_commits_in_batches_surviving_a_later_failure(
+    db_session: AsyncSession,
+) -> None:
+    """A non-default pipeline syncs one request per deal, so a full pipeline can run
+    long enough to hit a transient failure partway through. Before batched commits,
+    the whole pipeline's progress lived in one uncommitted transaction and a failure
+    on deal N lost deals 1..N-1 too. Seed 30 deals (> COMMIT_BATCH_SIZE=25) and fail
+    on deal 26 — the first 25 must already be persisted despite the raised error."""
+    await _seed_reference(db_session)
+    deal_ids = list(range(2001, 2031))  # 30 deals in the non-default pipeline
+
+    deals_meta = {"deals": [{"id": did} for did in deal_ids], "meta": {"total": len(deal_ids)}}
+
+    with respx.mock(base_url=BASE_URL, assert_all_called=False) as router:
+        router.get(url__regex=r".*/deals/view/\d+").mock(
+            return_value=httpx.Response(200, json={"deals": []})
+        )
+        router.post(url__regex=r".*/filtered_search/deal").mock(
+            return_value=httpx.Response(200, json=deals_meta)
+        )
+
+        def detail_side_effect(request: httpx.Request) -> httpx.Response:
+            deal_id = int(request.url.path.rsplit("/", 1)[-1])
+            if deal_id == deal_ids[25]:  # the 26th deal — one past the first batch
+                raise httpx.ConnectError("simulated transient failure")
+            return httpx.Response(
+                200,
+                json={"deal": {"id": deal_id, "deal_pipeline_id": 2, "deal_stage_id": 20,
+                               "owner_id": 100, "amount": "100", "name": f"Deal {deal_id}"}},
+            )
+
+        router.get(url__regex=r".*/deals/\d+").mock(side_effect=detail_side_effect)
+
+        async with FreshsalesClient() as client:
+            with pytest.raises(httpx.ConnectError):
+                await run_deal_sync(db_session, client)
+
+    synced = await deals_repo.list_deals_for_pipeline(db_session, 2)
+    assert len(synced) == 25  # first batch committed; the failed deal + rest never landed
+    assert {d.deal_id for d in synced} == set(deal_ids[:25])
