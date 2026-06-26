@@ -11,3 +11,6 @@ class DashboardUser(SQLModel, table=True):
         default=None, sa_column=Column(BigInteger, ForeignKey("owners.id"))
     )
     hashed_password: str | None = Field(default=None)
+    # Set when an admin invites a user with a temporary password; cleared once the
+    # user sets their own. The frontend gates the dashboard on it.
+    must_change_password: bool = Field(default=False)

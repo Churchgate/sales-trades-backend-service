@@ -1,5 +1,6 @@
 """JWT issuance/verification and bcrypt password hashing."""
 
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -13,6 +14,11 @@ settings = get_settings()
 
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+
+
+def generate_temp_password() -> str:
+    """A URL-safe random temporary password for invited users (~16 chars)."""
+    return secrets.token_urlsafe(12)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
