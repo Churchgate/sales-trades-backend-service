@@ -14,7 +14,7 @@ def test_rep_scoped_to_own_owner_id() -> None:
 
 
 def test_manager_roles_see_everything() -> None:
-    for role in ("gmd", "sales_manager", "superadmin"):
+    for role in ("admin", "hod", "team_lead", "superadmin"):
         assert get_owner_scope(_user(role, None)) is None
 
 

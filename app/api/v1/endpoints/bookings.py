@@ -35,7 +35,7 @@ from app.services import booking_service
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
-_BOOKING_ADMIN_ROLES = ("gmd", "superadmin")
+_BOOKING_ADMIN_ROLES = ("admin", "superadmin")
 
 
 def _booking_out(booking: Booking, room: Room | None) -> BookingOut:
