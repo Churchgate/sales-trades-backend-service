@@ -1,6 +1,7 @@
 import httpx
 import pytest
 import respx
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -74,6 +75,33 @@ async def test_deal_sync_covers_default_and_non_default_pipelines(
     assert {d.deal_id for d in other_deals} == {2002}
     assert other_deals[0].stage_id == 20
     assert other_deals[0].owner_id == 100
+
+
+async def test_upsert_bumps_last_synced_at_on_update(db_session: AsyncSession) -> None:
+    """Re-syncing an existing deal must move `last_synced_at` forward — the dashboard's
+    'data as of' badge reads max(last_synced_at), so a refresh that didn't bump it
+    showed stale data. (The column's `onupdate=func.now()` doesn't fire for
+    INSERT ... ON CONFLICT DO UPDATE, so the upsert sets it explicitly.)"""
+    await _seed_reference(db_session)
+    deal = {"deal_id": 5001, "pipeline_id": 1, "stage_id": 10, "name": "D", "amount": "1"}
+    await deals_repo.upsert_deal(db_session, deal)
+    await db_session.commit()
+
+    # Force the timestamp to look old, as if first synced days ago.
+    await db_session.execute(
+        text("UPDATE deals_snapshot SET last_synced_at = now() - interval '5 days' "
+             "WHERE deal_id = 5001")
+    )
+    await db_session.commit()
+
+    await deals_repo.upsert_deal(db_session, {**deal, "amount": "2"})
+    await db_session.commit()
+
+    row = await deals_repo.get_deal(db_session, 5001)
+    age = (await db_session.execute(text("SELECT now() - last_synced_at FROM deals_snapshot "
+                                         "WHERE deal_id = 5001"))).scalar_one()
+    assert age.total_seconds() < 60  # bumped to ~now, not still 5 days old
+    assert row.amount == 2  # field refreshed too
 
 
 async def test_deal_sync_commits_in_batches_surviving_a_later_failure(
