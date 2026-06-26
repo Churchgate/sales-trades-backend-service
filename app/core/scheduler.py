@@ -18,6 +18,10 @@ logger = get_logger(__name__)
 # Arbitrary, stable advisory-lock keys (bigint) - one per scheduled job.
 LOCK_KEY_REFERENCE_SYNC = 17_000_001
 LOCK_KEY_DEAL_SYNC = 17_000_002
+LOCK_KEY_TASK_SYNC = 17_000_003
+LOCK_KEY_EMAIL_SYNC = 17_000_004
+LOCK_KEY_DAILY_SNAPSHOT = 17_000_005
+LOCK_KEY_LEAD_CRM_SYNC = 17_000_006
 
 
 async def run_with_advisory_lock(

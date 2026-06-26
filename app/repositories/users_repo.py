@@ -14,6 +14,16 @@ async def create_user(session: AsyncSession, user: DashboardUser) -> DashboardUs
     return user
 
 
+async def set_password(
+    session: AsyncSession, user: DashboardUser, hashed: str, *, must_change: bool
+) -> DashboardUser:
+    user.hashed_password = hashed
+    user.must_change_password = must_change
+    session.add(user)
+    await session.commit()
+    return user
+
+
 async def list_users(session: AsyncSession) -> list[DashboardUser]:
     result = await session.execute(select(DashboardUser))
     return list(result.scalars().all())

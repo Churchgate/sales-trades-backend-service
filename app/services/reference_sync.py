@@ -50,7 +50,7 @@ async def sync_pipelines_and_stages(session: AsyncSession, client: FreshsalesCli
             logger.info("skipping stages for inactive pipeline", pipeline_id=pipeline_id)
             continue
 
-        # Classic API embeds stages inside each pipeline object
+        # Suite /selector/deal_pipelines embeds stages inside each pipeline object
         for stage in pipeline.get("deal_stages", []):
             await reference_repo.upsert_stage(
                 session,
@@ -88,6 +88,19 @@ async def sync_owners(session: AsyncSession, client: FreshsalesClient) -> None:
     logger.info("owner reference sync complete", owner_count=len(owners))
 
 
+async def sync_deal_reasons(session: AsyncSession, client: FreshsalesClient) -> None:
+    """Sync the `deal_reasons` lookup (lost/won reason id -> name, spec §B2).
+    `deals_snapshot.lost_reason_id` resolves against this for loss-reason categories."""
+    data = await client.get_deal_reasons()
+    reasons = data.get("deal_reasons", [])
+    for reason in reasons:
+        await reference_repo.upsert_deal_reason(
+            session, {"id": reason["id"], "name": reason["name"]}
+        )
+    await session.commit()
+    logger.info("deal reason reference sync complete", reason_count=len(reasons))
+
+
 async def build_stage_resolver(session: AsyncSession) -> PipelineStageResolver:
     """Build the `(pipeline_name, stage_name) -> ids` resolver from current reference data."""
     pipelines = await reference_repo.list_pipelines(session)
@@ -98,7 +111,9 @@ async def build_stage_resolver(session: AsyncSession) -> PipelineStageResolver:
 async def run_reference_sync(
     session: AsyncSession, client: FreshsalesClient
 ) -> PipelineStageResolver:
-    """Full reference sync: pipelines, stages, owners. Returns a fresh resolver."""
+    """Full reference sync: pipelines, stages, owners, deal reasons. Returns a fresh
+    resolver."""
     await sync_pipelines_and_stages(session, client)
     await sync_owners(session, client)
+    await sync_deal_reasons(session, client)
     return await build_stage_resolver(session)
