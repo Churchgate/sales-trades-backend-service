@@ -6,7 +6,7 @@ class DashboardUser(SQLModel, table=True):
     __tablename__ = "dashboard_users"
 
     email: str = Field(primary_key=True)
-    role: str  # 'superadmin' | 'gmd' | 'sales_manager' | 'rep'
+    role: str  # 'superadmin' | 'admin' | 'hod' | 'team_lead' | 'rep'
     owner_id: int | None = Field(
         default=None, sa_column=Column(BigInteger, ForeignKey("owners.id"))
     )

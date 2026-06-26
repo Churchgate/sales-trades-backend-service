@@ -89,7 +89,7 @@ async def test_invite_duplicate_is_conflict(client_as, db_session):
 
 
 async def test_invite_requires_superadmin(client_as):
-    async with client_as("gmd") as c:
+    async with client_as("admin") as c:
         res = await c.post(
             "/api/v1/admin/users", json={"email": "rep4@churchgate.com", "role": "rep"}
         )
@@ -173,3 +173,39 @@ async def test_admin_reset_unknown_user_is_404(client_as):
     async with client_as("superadmin") as c:
         res = await c.post("/api/v1/admin/users/nobody@churchgate.com/reset-password")
     assert res.status_code == 404
+
+
+async def test_delete_user_removes_them(client_as, db_session):
+    # Works for a pending invite too (must_change_password=True).
+    await users_repo.create_user(
+        db_session,
+        DashboardUser(email="gone@churchgate.com", role="rep", hashed_password="x",
+                      must_change_password=True),
+    )
+    async with client_as("superadmin") as c:
+        res = await c.delete("/api/v1/admin/users/gone@churchgate.com")
+    assert res.status_code == 200, res.text
+    assert await users_repo.get_user_by_email(db_session, "gone@churchgate.com") is None
+
+
+async def test_delete_user_requires_superadmin(client_as, db_session):
+    await users_repo.create_user(
+        db_session,
+        DashboardUser(email="keep@churchgate.com", role="rep", hashed_password="x"),
+    )
+    async with client_as("admin") as c:
+        res = await c.delete("/api/v1/admin/users/keep@churchgate.com")
+    assert res.status_code == 403
+
+
+async def test_delete_unknown_user_is_404(client_as):
+    async with client_as("superadmin") as c:
+        res = await c.delete("/api/v1/admin/users/nobody@churchgate.com")
+    assert res.status_code == 404
+
+
+async def test_delete_self_is_rejected(client_as):
+    # The stub superadmin authenticates as admin@churchgate.com.
+    async with client_as("superadmin", email="admin@churchgate.com") as c:
+        res = await c.delete("/api/v1/admin/users/admin@churchgate.com")
+    assert res.status_code == 400

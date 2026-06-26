@@ -1,6 +1,6 @@
 from pydantic import BaseModel, field_validator
 
-VALID_ROLES = {"superadmin", "gmd", "sales_manager", "rep"}
+VALID_ROLES = {"superadmin", "admin", "hod", "team_lead", "rep"}
 MIN_PASSWORD_LENGTH = 8
 
 

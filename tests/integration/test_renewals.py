@@ -79,7 +79,7 @@ async def test_renewals_route_accepts_query_params(db_session: AsyncSession) -> 
 
     app.dependency_overrides[get_session] = _get_session
     app.dependency_overrides[get_current_user] = lambda: DashboardUser(
-        email="test@local", role="gmd", owner_id=None, hashed_password="x"
+        email="test@local", role="admin", owner_id=None, hashed_password="x"
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

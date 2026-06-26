@@ -24,6 +24,11 @@ async def set_password(
     return user
 
 
+async def delete_user(session: AsyncSession, user: DashboardUser) -> None:
+    await session.delete(user)
+    await session.commit()
+
+
 async def list_users(session: AsyncSession) -> list[DashboardUser]:
     result = await session.execute(select(DashboardUser))
     return list(result.scalars().all())
