@@ -88,6 +88,14 @@ async def run_deal_sync(session: AsyncSession, client: FreshsalesClient) -> None
 
     counters = {"synced": 0, "skipped": 0}
 
+    # Non-default-pipeline deals sync one Freshsales request at a time, so a full
+    # pipeline (the largest has ~1,900 deals) can take well over an hour. Committing
+    # only once per pipeline meant a single transient failure (a slow request, a
+    # rate-limit blip) lost the whole pipeline's progress, repeating from scratch
+    # next run. Commit every COMMIT_BATCH_SIZE upserts so at most a small batch is
+    # ever lost.
+    COMMIT_BATCH_SIZE = 25
+
     async def _upsert(deal: dict[str, Any]) -> None:
         if deal.get("deal_pipeline_id") not in active_pipeline_ids:
             counters["skipped"] += 1
@@ -101,6 +109,8 @@ async def run_deal_sync(session: AsyncSession, client: FreshsalesClient) -> None
             data.pop("owner_id", None)
         await deals_repo.upsert_deal(session, data)
         counters["synced"] += 1
+        if counters["synced"] % COMMIT_BATCH_SIZE == 0:
+            await session.commit()
 
     # 1. Default pipeline — system views (Open/Won/Lost) cover it efficiently.
     for view_id in settings.deal_view_ids:
