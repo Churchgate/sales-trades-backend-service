@@ -68,6 +68,21 @@ def deal_conversations(deal_id: int) -> str:
     return f"/crm/sales/deals/{deal_id}/conversations/all"
 
 
+def notes() -> str:
+    """Create a note (write). Verified live: body
+    {"note": {"description", "targetable_type": "Deal", "targetable_id": <deal_id>}} → 200,
+    response wraps the record under `note`."""
+    return "/crm/sales/api/notes"
+
+
+def tasks() -> str:
+    """Create a task (write). Verified live: body
+    {"task": {"title", "due_date", "owner_id", "targetable_type": "Deal", "targetable_id": <id>}}
+    → 201, response wraps the record under `task`. (Note: this CREATE path keeps the `/api` segment,
+    unlike the per-deal task LIST endpoint `deal_tasks` which omits it.)"""
+    return "/crm/sales/api/tasks"
+
+
 # --- Contacts (write — booth/stand lead sync) ---
 
 

@@ -135,6 +135,37 @@ class FreshsalesClient:
         data = await self.post(endpoints.contact_upsert(), payload)
         return data.get("contact", data)
 
+    # --- Activity writes (logging agent) ---
+
+    async def create_note(self, deal_id: int, description: str) -> dict[str, Any]:
+        """Create a note on a deal. Returns the unwrapped `note` object (incl. `id`)."""
+        body = {
+            "note": {
+                "description": description,
+                "targetable_type": "Deal",
+                "targetable_id": deal_id,
+            }
+        }
+        data = await self.post(endpoints.notes(), body)
+        return data.get("note", data)
+
+    async def create_task(
+        self, deal_id: int, title: str, *, due_date: str, owner_id: int
+    ) -> dict[str, Any]:
+        """Create a task on a deal. `due_date` is ISO-8601 (with offset). Returns the
+        unwrapped `task` object (incl. `id`)."""
+        body = {
+            "task": {
+                "title": title,
+                "due_date": due_date,
+                "owner_id": owner_id,
+                "targetable_type": "Deal",
+                "targetable_id": deal_id,
+            }
+        }
+        data = await self.post(endpoints.tasks(), body)
+        return data.get("task", data)
+
     # --- Reference data ---
 
     async def get_pipelines(self) -> dict[str, Any]:
