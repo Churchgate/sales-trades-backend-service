@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import health, webhooks
+from app.api.v1.endpoints import agent, health, webhooks
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import session_scope
@@ -123,6 +123,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(webhooks.router)
+    app.include_router(agent.router)
     app.include_router(api_router, prefix="/api/v1")
     return app
 

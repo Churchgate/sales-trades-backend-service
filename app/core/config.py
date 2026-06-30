@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     # via POST /api/v1/admin/sync/reference instead.
     sync_on_startup: bool = True
 
+    # --- Logging agent (WhatsApp/Telegram → CRM) ---
+    # Shared secret the n8n workflow presents (header) to POST /webhooks/agent/log.
+    agent_webhook_secret: str = ""
+    # Pipelines the logging agent may write to. Starts locked to the Test pipeline
+    # so testing can never touch real deals; widen (comma-separated) once verified.
+    agent_allowed_pipeline_ids: str = "17000075034"
+
     @property
     def freshsales_base_url(self) -> str:
         # Freshsales Suite host. The endpoint paths in app/freshsales/endpoints.py
@@ -83,6 +90,10 @@ class Settings(BaseSettings):
     @property
     def deal_view_ids(self) -> list[int]:
         return [int(v) for v in self.freshsales_deal_view_ids.split(",") if v.strip()]
+
+    @property
+    def agent_allowed_pipelines(self) -> set[int]:
+        return {int(v) for v in self.agent_allowed_pipeline_ids.split(",") if v.strip()}
 
 
 @lru_cache
