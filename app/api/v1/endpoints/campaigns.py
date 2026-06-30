@@ -197,6 +197,37 @@ async def delete_lead(campaign_id: int, lead_id: int, session: SessionDep) -> Me
     return MessageResponse(status_code=status.HTTP_200_OK, message="Lead deleted")
 
 
+@router.delete("/{campaign_id}/leads", dependencies=[Depends(require_role("superadmin"))])
+async def bulk_delete_leads(
+    campaign_id: int,
+    session: SessionDep,
+    confirm: Annotated[bool, Query()] = False,
+    interest: Annotated[str | None, Query()] = None,
+    inspection: Annotated[bool | None, Query()] = None,
+    opt_in: Annotated[bool | None, Query()] = None,
+    sync_status: Annotated[str | None, Query()] = None,
+) -> MessageResponse:
+    """Bulk-remove leads matching the given filters — the QA/test-campaign purge
+    case (e.g. clearing a kiosk-app-qa campaign between test runs). Same filters
+    as GET .../leads; omit all of them to delete every lead in the campaign.
+
+    `confirm=true` is required on every call (not just a role check) — this is
+    the single most destructive endpoint in the API, with no filter applied by
+    default it wipes the whole campaign's leads, and unlike CRM sync or pack
+    delivery there's no retry/undo."""
+    await _require_campaign(session, campaign_id)
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pass confirm=true to bulk-delete leads (no undo).",
+        )
+    deleted = await leads_repo.delete_for_campaign(
+        session, campaign_id,
+        interest=interest, inspection=inspection, opt_in=opt_in, sync_status=sync_status,
+    )
+    return MessageResponse(status_code=status.HTTP_200_OK, message=f"Deleted {deleted} lead(s)")
+
+
 @router.get("/{campaign_id}/stats", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
 async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStatsResponse:
     campaign = await _require_campaign(session, campaign_id)

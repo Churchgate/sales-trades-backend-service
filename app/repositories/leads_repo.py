@@ -1,5 +1,7 @@
 from sqlalchemy import Select, func, select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.dml import Delete
 
 from app.models.lead import CRM_SYNCED, PACK_SENT, Lead
 
@@ -37,15 +39,40 @@ async def delete(session: AsyncSession, lead: Lead) -> None:
     await session.commit()
 
 
+async def delete_for_campaign(
+    session: AsyncSession,
+    campaign_id: int,
+    *,
+    interest: str | None = None,
+    inspection: bool | None = None,
+    opt_in: bool | None = None,
+    sync_status: str | None = None,
+) -> int:
+    """Bulk-delete leads matching the given filters (same shape as
+    `list_for_campaign`). No filters = every lead in the campaign — the "purge
+    a QA/test campaign" case. Returns the number of rows deleted."""
+    stmt = _apply_filters(
+        sa_delete(Lead),
+        campaign_id=campaign_id,
+        interest=interest,
+        inspection=inspection,
+        opt_in=opt_in,
+        sync_status=sync_status,
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return result.rowcount
+
+
 def _apply_filters(
-    stmt: Select,
+    stmt: Select | Delete,
     *,
     campaign_id: int,
     interest: str | None,
     inspection: bool | None,
     opt_in: bool | None,
     sync_status: str | None,
-) -> Select:
+) -> Select | Delete:
     stmt = stmt.where(Lead.campaign_id == campaign_id)
     if interest is not None:
         stmt = stmt.where(Lead.interests.any(interest))
