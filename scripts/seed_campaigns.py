@@ -41,6 +41,27 @@ _NOG_2026_CONFIG: dict = {
         "Location Overview",
     ],
     "timing_options": ["Immediate", "0-3 months", "3-6 months", "6-12 months", "Future"],
+    # Digital-pack delivery (services/pack_delivery.py): each material label maps to
+    # the download link emailed to a visitor who requested it. Keyed by the exact
+    # `materials` labels above. REPLACE these placeholders with the real hosted
+    # asset URLs before the campaign goes live (2026-07-05) — anything without a
+    # link here is captured/tagged but not emailed.
+    "materials_assets": {
+        "Corporate Prospectus": "https://assets.wtcabuja.com/nog-2026/corporate-prospectus.pdf",
+        "Office Floorplates": "https://assets.wtcabuja.com/nog-2026/office-floorplates.pdf",
+        "Residence Floorplans": "https://assets.wtcabuja.com/nog-2026/residence-floorplans.pdf",
+        "Security & Continuity Brief": "https://assets.wtcabuja.com/nog-2026/security-continuity-brief.pdf",
+        "Clubhouse Overview": "https://assets.wtcabuja.com/nog-2026/clubhouse-overview.pdf",
+        "Location Overview": "https://assets.wtcabuja.com/nog-2026/location-overview.pdf",
+    },
+    # Optional copy override for the digital-pack email (defaults live in the service).
+    "digital_pack": {
+        "subject": "Your WTC Abuja digital pack",
+        "intro": (
+            "Thank you for visiting the World Trade Center Abuja stand. As "
+            "requested, here are your materials to download:"
+        ),
+    },
     "consent": {
         "required": (
             "By submitting this form, you agree that World Trade Center Abuja may "

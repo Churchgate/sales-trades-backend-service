@@ -94,6 +94,13 @@ class LeadOut(BaseModel):
     crm_sync_status: str
     crm_synced_at: datetime | None = None
     crm_contact_id: str | None = None
+    pack_delivery_status: str
+    pack_delivered_at: datetime | None = None
+    pack_delivered_materials: list[str] | None = None
+    # Did they request a pack and did we deliver it? (dashboard request→delivery check)
+    pack_fulfilled: bool = False
+    # 0–100 intent score for ranking leads (see services/lead_scoring.py).
+    engagement_score: int = 0
 
 
 class DayCount(BaseModel):
@@ -107,7 +114,9 @@ class CampaignStats(BaseModel):
     marketing_opt_ins: int
     synced_count: int
     unsynced_count: int
+    packs_delivered: int
     by_interest: dict[str, int]
+    by_material: dict[str, int]
     by_source: dict[str, int]
     by_day: list[DayCount]
 

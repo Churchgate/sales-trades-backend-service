@@ -9,6 +9,7 @@ from app.core.scheduler import (
     LOCK_KEY_DEAL_SYNC,
     LOCK_KEY_EMAIL_SYNC,
     LOCK_KEY_LEAD_CRM_SYNC,
+    LOCK_KEY_PACK_DELIVERY,
     LOCK_KEY_REFERENCE_SYNC,
     LOCK_KEY_TASK_SYNC,
     run_with_advisory_lock,
@@ -19,6 +20,7 @@ from app.services import (
     deal_sync,
     email_sync,
     lead_crm_sync,
+    pack_delivery,
     reference_sync,
     task_sync,
 )
@@ -78,3 +80,12 @@ async def lead_crm_sync_job(state: State) -> None:
         logger.info("lead crm sync job done", synced=synced)
 
     await run_with_advisory_lock(LOCK_KEY_LEAD_CRM_SYNC, "lead_crm_sync", _run)
+
+
+async def pack_delivery_job(state: State) -> None:
+    async def _run() -> None:
+        async with session_scope() as session:
+            delivered = await pack_delivery.deliver_pending(session)
+        logger.info("pack delivery job done", delivered=delivered)
+
+    await run_with_advisory_lock(LOCK_KEY_PACK_DELIVERY, "pack_delivery", _run)

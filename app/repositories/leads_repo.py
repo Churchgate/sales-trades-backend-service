@@ -1,7 +1,7 @@
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.lead import CRM_SYNCED, Lead
+from app.models.lead import CRM_SYNCED, PACK_SENT, Lead
 
 
 async def get(session: AsyncSession, lead_id: int) -> Lead | None:
@@ -109,6 +109,19 @@ async def list_pending_crm_sync(
     return list(result.scalars().all())
 
 
+async def list_pending_pack_delivery(
+    session: AsyncSession, *, statuses: list[str], limit: int = 200
+) -> list[Lead]:
+    """Leads awaiting digital-pack email (across all campaigns), oldest first."""
+    result = await session.execute(
+        select(Lead)
+        .where(Lead.pack_delivery_status.in_(statuses))
+        .order_by(Lead.created_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 # --- stats helpers ---
 
 
@@ -122,6 +135,32 @@ async def count_opt_ins(session: AsyncSession, campaign_id: int) -> int:
 
 async def count_synced(session: AsyncSession, campaign_id: int) -> int:
     return await count_for_campaign(session, campaign_id, sync_status=CRM_SYNCED)
+
+
+async def count_packs_delivered(session: AsyncSession, campaign_id: int) -> int:
+    """Leads whose requested digital pack has been emailed."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Lead)
+        .where(Lead.campaign_id == campaign_id, Lead.pack_delivery_status == PACK_SENT)
+    )
+    return result.scalar_one()
+
+
+async def counts_by_material(session: AsyncSession, campaign_id: int) -> dict[str, int]:
+    """How many leads requested each material — the request-demand breakdown.
+
+    Counts the verbatim `requested_materials` (what visitors actually asked for),
+    so it includes any newsletter pseudo-item too; that's intentional for
+    demand analysis of the form itself."""
+    material = func.unnest(Lead.requested_materials).label("material")
+    result = await session.execute(
+        select(material, func.count().label("n"))
+        .where(Lead.campaign_id == campaign_id)
+        .group_by(material)
+        .order_by(func.count().desc())
+    )
+    return {row.material: row.n for row in result.all()}
 
 
 async def counts_by_interest(session: AsyncSession, campaign_id: int) -> dict[str, int]:

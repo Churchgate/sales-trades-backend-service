@@ -18,6 +18,16 @@ _CONFIG = {
     "inspection_tag": "Private Inspection",
     "newsletter_tag": "Newsletter Opt-In",
     "digital_pack_tag": "Digital Pack",
+    "materials": [
+        "Corporate Prospectus",
+        "Office Floorplates",
+        "Residence Floorplans",
+    ],
+    "materials_assets": {
+        "Corporate Prospectus": "https://assets.example.com/prospectus.pdf",
+        "Office Floorplates": "https://assets.example.com/office.pdf",
+        # Residence Floorplans intentionally has no asset (tests the gap path).
+    },
 }
 
 
@@ -72,6 +82,39 @@ async def test_capture_normalises_email_and_dedups(db_session: AsyncSession) -> 
     assert second.id == first.id
     assert second.company == "New Energy Co"
     rows = await leads_repo.list_for_campaign(db_session, first.campaign_id)
+    assert len(rows) == 1
+
+
+async def test_capture_survives_concurrent_duplicate_insert(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two retries racing the dedup SELECT both attempt INSERT; the unique
+    (campaign_id, email) index makes the second one fail. capture_lead should
+    recover by merging onto the row the other request created, not 500."""
+    campaign = await _make_campaign(db_session)
+    first = await lead_service.capture_lead(db_session, "nog-2026", _lead())
+
+    # Force capture_lead's dedup SELECT to miss once, as if this request's
+    # snapshot was taken before the other request's row was visible — the
+    # row is already committed in the DB, so the INSERT below hits the
+    # unique (campaign_id, email) violation.
+    real_lookup = leads_repo.get_by_campaign_email
+    calls = {"n": 0}
+
+    async def _miss_once(session: AsyncSession, campaign_id: int, email: str):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None
+        return await real_lookup(session, campaign_id, email)
+
+    monkeypatch.setattr(lead_service.leads_repo, "get_by_campaign_email", _miss_once)
+
+    second = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(company="Retried Co")
+    )
+    assert second.id == first.id
+    assert second.company == "Retried Co"
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
     assert len(rows) == 1
 
 
@@ -149,6 +192,7 @@ async def test_campaign_stats_counts(db_session: AsyncSession) -> None:
     assert stats.by_interest["Office Leasing"] == 2
     assert stats.by_interest["Clubhouse"] == 1
     assert stats.by_source == {"qr": 1, "tablet": 1}
+    assert stats.packs_delivered == 0  # no email configured in tests
     assert sum(d.count for d in stats.by_day) == 2
     # sync disabled by default -> nothing synced yet
     assert stats.synced_count == 0
@@ -185,6 +229,130 @@ async def test_leads_to_csv_formats_arrays(db_session: AsyncSession) -> None:
     )
     csv_text = lead_export.leads_to_csv([lead])
     assert "Office Leasing; Clubhouse" in csv_text
+
+
+# --- digital-pack delivery ---
+
+
+async def test_deliver_pack_sends_only_materials_with_assets(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.models.lead import PACK_SENT
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(requested_materials=["Corporate Prospectus", "Residence Floorplans"]),
+    )
+    assert lead.pack_delivery_status == "pending"
+
+    sent: dict = {}
+
+    async def _fake_send(*, to_email, subject, html, text, settings=None):
+        sent.update(to_email=to_email, subject=subject, html=html, text=text)
+        return True
+
+    enabled = Settings(sendgrid_api_key="SG.test")
+    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+
+    result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    assert result.pack_delivery_status == PACK_SENT
+    # Only the material with a configured asset is delivered (Residence has none).
+    assert result.pack_delivered_materials == ["Corporate Prospectus"]
+    assert "Corporate Prospectus" in sent["html"]
+    assert "Residence Floorplans" not in sent["html"]
+
+
+async def test_deliver_pack_skipped_when_email_unconfigured(db_session: AsyncSession) -> None:
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(requested_materials=["Corporate Prospectus"])
+    )
+    disabled = Settings(sendgrid_api_key="")
+    result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=disabled)
+    assert result.pack_delivery_status == "skipped"
+
+
+async def test_deliver_pack_newsletter_pseudo_item_is_not_a_delivery(
+    db_session: AsyncSession,
+) -> None:
+    """The 'WTC Abuja Updates & Private Invitations' checkbox is the newsletter
+    opt-in, not a document — it must never count as a deliverable material."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(requested_materials=["WTC Abuja Updates & Private Invitations"]),
+    )
+    enabled = Settings(sendgrid_api_key="SG.test")
+    result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    assert result.pack_delivery_status == "not_requested"
+    assert result.pack_delivered_materials is None
+
+
+async def test_deliver_pending_picks_up_pending_packs(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import pack_delivery
+
+    await _make_campaign(db_session)
+    await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+    await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="b@example.com", requested_materials=["Office Floorplates"]),
+    )
+    enabled = Settings(sendgrid_api_key="SG.test")
+    monkeypatch.setattr(pack_delivery, "get_settings", lambda: enabled)
+
+    async def _fake_send(*, to_email, subject, html, text, settings=None):
+        return True
+
+    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+
+    delivered = await pack_delivery.deliver_pending(db_session)
+    assert delivered == 2
+
+
+async def test_stats_by_material_counts_requests(db_session: AsyncSession) -> None:
+    campaign = await _make_campaign(db_session)
+    await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+    await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="b@example.com",
+              requested_materials=["Corporate Prospectus", "Office Floorplates"]),
+    )
+    resp = await campaigns_api.campaign_stats(campaign.id, db_session)
+    assert resp.stats.by_material["Corporate Prospectus"] == 2
+    assert resp.stats.by_material["Office Floorplates"] == 1
+
+
+async def test_engagement_score_ranks_by_intent(db_session: AsyncSession) -> None:
+    from app.services import lead_scoring
+
+    await _make_campaign(db_session)
+    hot = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="hot@example.com", interests=["Office Leasing"],
+              requested_materials=["Corporate Prospectus"],
+              inspection_requested=True, timing="Immediately", marketing_opt_in=True),
+    )
+    cold = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="cold@example.com", timing="Researching"),
+    )
+    assert lead_scoring.engagement_score(hot) > lead_scoring.engagement_score(cold)
+    # Inspection + interest + material + immediate timing should score well.
+    assert lead_scoring.engagement_score(hot) >= 50
 
 
 # --- CRM sync ---

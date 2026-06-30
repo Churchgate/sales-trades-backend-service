@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # CSV-first (the guaranteed path) and flip this on once verified live.
     freshsales_lead_sync_enabled: bool = False
     lead_crm_sync_interval_minutes: int = 10
+    # Backstop sweep for digital-pack emails not delivered inline at capture
+    # (e.g. captured offline, or a transient send failure). Capture also attempts
+    # delivery inline so most packs go out immediately; this just retries the rest.
+    pack_delivery_interval_minutes: int = 5
 
     # --- JWT ---
     jwt_secret: str = "change-me-in-production"

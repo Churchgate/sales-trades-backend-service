@@ -8,11 +8,12 @@ Freshsales later, so capture never blocks on (or fails because of) the network.
 
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.models.campaign import STATUS_ACTIVE, Campaign
-from app.models.lead import CRM_PENDING, Lead
+from app.models.lead import CRM_PENDING, PACK_NOT_REQUESTED, PACK_PENDING, Lead
 from app.repositories import campaigns_repo, leads_repo
 from app.schemas.campaigns import LeadCreateRequest
 
@@ -72,23 +73,51 @@ def _apply_payload(lead: Lead, campaign: Campaign, payload: LeadCreateRequest) -
     # New/updated info must be (re)pushed to the CRM.
     lead.crm_sync_status = CRM_PENDING
     lead.crm_error = None
+    # Requested materials must be (re)delivered. The delivery service decides what
+    # is actually deliverable (real materials with a configured asset); here we
+    # just flag that there's something to attempt vs nothing at all.
+    lead.pack_delivery_status = (
+        PACK_PENDING if payload.requested_materials else PACK_NOT_REQUESTED
+    )
+    lead.pack_delivery_error = None
 
 
 async def capture_lead(
     session: AsyncSession, slug: str, payload: LeadCreateRequest
 ) -> Lead:
-    """Create (or dedup-merge) a lead for the active campaign `slug`."""
+    """Create (or dedup-merge) a lead for the active campaign `slug`.
+
+    Dedup is by (campaign_id, email) — this is the idempotency mechanism: an
+    offline-queue retry of the same submission lands on the same row instead
+    of creating a duplicate. The SELECT-then-INSERT below has a race window
+    (two retries fired close together can both miss the SELECT), so a unique
+    violation on INSERT is treated the same as finding the row up front —
+    re-fetch and merge instead of erroring the request.
+    """
     campaign = await campaigns_repo.get_by_slug(session, slug)
     if campaign is None:
         raise CampaignNotFoundError(f"no campaign with slug {slug}")
     if campaign.status != STATUS_ACTIVE:
         raise CampaignInactiveError(f"campaign {slug} is not accepting leads")
 
+    campaign_id = campaign.id
     email = str(payload.email).strip().lower()
-    existing = await leads_repo.get_by_campaign_email(session, campaign.id, email)
-    lead = existing or Lead(campaign_id=campaign.id, email=email)
+    existing = await leads_repo.get_by_campaign_email(session, campaign_id, email)
+    lead = existing or Lead(campaign_id=campaign_id, email=email)
     _apply_payload(lead, campaign, payload)
 
     if existing is not None:
         return await leads_repo.update(session, lead)
-    return await leads_repo.create(session, lead)
+
+    try:
+        return await leads_repo.create(session, lead)
+    except IntegrityError:
+        # session.rollback() expires already-loaded instances (incl. `campaign`),
+        # so re-fetch both by plain id rather than touching the stale objects.
+        await session.rollback()
+        existing = await leads_repo.get_by_campaign_email(session, campaign_id, email)
+        if existing is None:
+            raise
+        campaign = await campaigns_repo.get(session, campaign_id)
+        _apply_payload(existing, campaign, payload)
+        return await leads_repo.update(session, existing)

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.dependencies import SessionDep, require_role
 from app.models.campaign import Campaign
-from app.models.lead import Lead
+from app.models.lead import PACK_PENDING, Lead
 from app.repositories import campaigns_repo, leads_repo
 from app.schemas.campaigns import (
     CampaignCreateRequest,
@@ -27,7 +27,13 @@ from app.schemas.campaigns import (
     LeadOut,
     LeadsListResponse,
 )
-from app.services import lead_crm_sync, lead_export, lead_service
+from app.services import (
+    lead_crm_sync,
+    lead_export,
+    lead_scoring,
+    lead_service,
+    pack_delivery,
+)
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -50,7 +56,10 @@ def _campaign_out(campaign: Campaign) -> CampaignOut:
 
 
 def _lead_out(lead: Lead) -> LeadOut:
-    return LeadOut.model_validate(lead, from_attributes=True)
+    out = LeadOut.model_validate(lead, from_attributes=True)
+    out.pack_fulfilled = lead_scoring.pack_fulfilled(lead)
+    out.engagement_score = lead_scoring.engagement_score(lead)
+    return out
 
 
 async def _require_campaign(session: SessionDep, campaign_id: int) -> Campaign:
@@ -108,13 +117,24 @@ async def get_campaign(slug: str, session: SessionDep) -> CampaignDetailResponse
 async def capture_lead(
     slug: str, body: LeadCreateRequest, session: SessionDep
 ) -> LeadCaptureResponse:
-    """Public — capture a visitor lead. Saved immediately; CRM push happens later."""
+    """Public — capture a visitor lead. Saved immediately; CRM push happens later.
+
+    If the visitor requested a digital pack we attempt to email it inline so it
+    arrives 'right away' (best-effort — `deliver_pack` never raises); the
+    scheduled `pack_delivery_job` is the backstop for anything not yet sent.
+    """
     try:
         lead = await lead_service.capture_lead(session, slug.strip(), body)
     except lead_service.CampaignNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except lead_service.CampaignInactiveError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if lead.pack_delivery_status == PACK_PENDING:
+        campaign = await campaigns_repo.get(session, lead.campaign_id)
+        if campaign is not None:
+            lead = await pack_delivery.deliver_pack(session, lead, campaign)
+
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
 
 
@@ -172,7 +192,9 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
         marketing_opt_ins=await leads_repo.count_opt_ins(session, campaign_id),
         synced_count=synced,
         unsynced_count=total - synced,
+        packs_delivered=await leads_repo.count_packs_delivered(session, campaign_id),
         by_interest=await leads_repo.counts_by_interest(session, campaign_id),
+        by_material=await leads_repo.counts_by_material(session, campaign_id),
         by_source=await leads_repo.counts_by_source(session, campaign_id),
         by_day=[DayCount(day=day, count=count) for day, count in by_day],
     )
@@ -200,4 +222,12 @@ async def resync_leads(campaign_id: int, session: SessionDep) -> CampaignStatsRe
     """Re-attempt CRM sync for pending/failed leads, then return fresh stats."""
     await _require_campaign(session, campaign_id)
     await lead_crm_sync.sync_pending(session)
+    return await campaign_stats(campaign_id, session)
+
+
+@router.post("/{campaign_id}/resend-packs", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+async def resend_packs(campaign_id: int, session: SessionDep) -> CampaignStatsResponse:
+    """Re-attempt digital-pack email for pending/failed leads, then return stats."""
+    await _require_campaign(session, campaign_id)
+    await pack_delivery.deliver_pending(session)
     return await campaign_stats(campaign_id, session)

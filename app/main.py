@@ -16,6 +16,7 @@ from app.jobs.tasks import (
     deal_sync_job,
     email_sync_job,
     lead_crm_sync_job,
+    pack_delivery_job,
     reference_sync_job,
     task_sync_job,
 )
@@ -93,6 +94,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             minutes=settings.lead_crm_sync_interval_minutes,
             kwargs={"state": app.state},
             id="lead_crm_sync",
+        )
+        scheduler.add_job(
+            pack_delivery_job,
+            "interval",
+            minutes=settings.pack_delivery_interval_minutes,
+            kwargs={"state": app.state},
+            id="pack_delivery",
         )
         scheduler.start()
         logger.info("scheduler started")
