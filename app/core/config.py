@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # (e.g. captured offline, or a transient send failure). Capture also attempts
     # delivery inline so most packs go out immediately; this just retries the rest.
     pack_delivery_interval_minutes: int = 5
+    # Digital-pack emails send from their own sender identity, distinct from
+    # bookings' no-reply@churchgate.com (a separate application's address) — must
+    # be a verified Sender Identity (or part of an authenticated domain) in
+    # SendGrid, or sends will fail.
+    event_mail_from_email: str = "events@wtcabuja.com"
+    event_mail_from_name: str = "WTC Abuja"
 
     # --- JWT ---
     jwt_secret: str = "change-me-in-production"
