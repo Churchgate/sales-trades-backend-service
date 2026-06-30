@@ -10,7 +10,12 @@ Which labels are *deliverable* and where each asset lives is driven entirely by
 the campaign's (dynamic) `config`:
 
     config["materials"]        -> the real material labels for this event
-    config["materials_assets"] -> { label: https://.../asset } download links
+    config["materials_assets"] -> { label: [https://.../asset, ...] } download
+                                   links — a list, since one material can be
+                                   more than one file (e.g. "Office Floorplates"
+                                   as two separate floorplate images). A bare
+                                   string is also accepted for a single-file
+                                   material, for config readability.
 
 So a new event is still just a new campaign row — no code change. Anything the
 visitor checked that isn't a real material with a configured asset (e.g. the
@@ -39,22 +44,34 @@ from app.services import mailer
 logger = get_logger(__name__)
 
 
-def deliverable_materials(lead: Lead, campaign: Campaign) -> list[tuple[str, str]]:
-    """(label, url) pairs this lead requested that have a configured asset.
+def _asset_urls(value: object) -> list[str]:
+    """Normalise a materials_assets entry to a list of URLs (string or list)."""
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str) and v]
+    return []
+
+
+def deliverable_materials(lead: Lead, campaign: Campaign) -> list[tuple[str, list[str]]]:
+    """(label, [urls]) pairs this lead requested that have a configured asset.
 
     Filters the lead's raw `requested_materials` down to real materials for the
-    campaign (config["materials"]) that also have a download link
+    campaign (config["materials"]) that also have at least one download link
     (config["materials_assets"]). Order follows the visitor's selection.
     """
     config = campaign.config or {}
     known = set(config.get("materials", []))
-    assets: dict[str, str] = config.get("materials_assets", {})
-    pairs: list[tuple[str, str]] = []
+    assets: dict[str, object] = config.get("materials_assets", {})
+    pairs: list[tuple[str, list[str]]] = []
     seen: set[str] = set()
     for label in lead.requested_materials or []:
-        if label in known and label in assets and label not in seen:
+        if label in seen or label not in known:
+            continue
+        urls = _asset_urls(assets.get(label))
+        if urls:
             seen.add(label)
-            pairs.append((label, assets[label]))
+            pairs.append((label, urls))
     return pairs
 
 
@@ -65,10 +82,14 @@ def _real_materials_requested(lead: Lead, campaign: Campaign) -> bool:
 
 
 def build_pack_email(
-    lead: Lead, campaign: Campaign, materials: list[tuple[str, str]]
+    lead: Lead, campaign: Campaign, materials: list[tuple[str, list[str]]]
 ) -> tuple[str, str, str]:
     """(subject, html, text) for the digital-pack email. Copy is overridable via
-    config["digital_pack"] = {"subject": ..., "intro": ...}."""
+    config["digital_pack"] = {"subject": ..., "intro": ...}.
+
+    A material with more than one file (e.g. two floorplate images) gets one
+    link per file, numbered under its label.
+    """
     pack_cfg = (campaign.config or {}).get("digital_pack", {})
     event_name = campaign.name
     subject = pack_cfg.get("subject", f"Your {event_name} digital pack")
@@ -79,15 +100,21 @@ def build_pack_email(
     )
     greeting = f"Hello {lead.first_name}," if lead.first_name else "Hello,"
 
+    def _link_label(label: str, index: int, total: int) -> str:
+        return f"{label} ({index + 1})" if total > 1 else label
+
     text_lines = [greeting, "", intro, ""]
-    text_lines += [f"- {label}: {url}" for label, url in materials]
+    for label, urls in materials:
+        for i, url in enumerate(urls):
+            text_lines.append(f"- {_link_label(label, i, len(urls))}: {url}")
     text = "\n".join(text_lines) + "\n"
 
     items = "\n".join(
         f'    <li style="margin:8px 0">'
         f'<a href="{url}" style="color:#c79a3a;font-weight:600;text-decoration:none">'
-        f"{label}</a></li>"
-        for label, url in materials
+        f"{_link_label(label, i, len(urls))}</a></li>"
+        for label, urls in materials
+        for i, url in enumerate(urls)
     )
     html = f"""\
 <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#15181e">
@@ -145,7 +172,7 @@ async def deliver_pack(
     if sent:
         lead.pack_delivery_status = PACK_SENT
         lead.pack_delivered_at = datetime.now(UTC)
-        lead.pack_delivered_materials = [label for label, _ in materials]
+        lead.pack_delivered_materials = [label for label, _urls in materials]
         lead.pack_delivery_error = None
     else:
         lead.pack_delivery_status = PACK_FAILED
