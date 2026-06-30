@@ -217,6 +217,75 @@ async def test_list_leads_filters_by_interest(db_session: AsyncSession) -> None:
     assert resp.leads[0].email == "a@example.com"
 
 
+async def test_delete_lead_removes_it(db_session: AsyncSession) -> None:
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())
+    resp = await campaigns_api.delete_lead(campaign.id, lead.id, db_session)
+    assert resp.status_code == 200
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
+    assert rows == []
+
+
+async def test_delete_lead_unknown_404(db_session: AsyncSession) -> None:
+    campaign = await _make_campaign(db_session)
+    with pytest.raises(HTTPException) as exc_info:
+        await campaigns_api.delete_lead(campaign.id, 999_999, db_session)
+    assert exc_info.value.status_code == 404
+
+
+async def test_delete_lead_wrong_campaign_404(db_session: AsyncSession) -> None:
+    """A lead_id that exists but belongs to a different campaign must 404, not
+    leak/delete cross-campaign."""
+    campaign_a = await _make_campaign(db_session, slug="event-a")
+    await _make_campaign(db_session, slug="event-b")
+    lead = await lead_service.capture_lead(db_session, "event-a", _lead())
+    other_campaign_id = (await campaigns_repo.get_by_slug(db_session, "event-b")).id
+    with pytest.raises(HTTPException) as exc_info:
+        await campaigns_api.delete_lead(other_campaign_id, lead.id, db_session)
+    assert exc_info.value.status_code == 404
+    # Untouched — still present under its real campaign.
+    rows = await leads_repo.list_for_campaign(db_session, campaign_a.id)
+    assert len(rows) == 1
+
+
+async def test_delete_lead_requires_superadmin_over_http(db_session: AsyncSession) -> None:
+    """Driven over real HTTP (not a direct function call) so require_role("superadmin")
+    is actually exercised — admin (not superadmin) must be forbidden."""
+    import httpx
+
+    from app.api.dependencies import get_current_user
+    from app.core.database import get_session
+    from app.main import create_app
+    from app.models.dashboard_user import DashboardUser
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())
+
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+
+    def _client_as(role: str) -> httpx.AsyncClient:
+        user = DashboardUser(email="staff@churchgate.com", role=role, owner_id=None,
+                              hashed_password="x")
+        app.dependency_overrides[get_current_user] = lambda: user
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+    async with _client_as("admin") as c:
+        res = await c.delete(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}")
+    assert res.status_code == 403
+
+    async with _client_as("superadmin") as c:
+        res = await c.delete(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}")
+    assert res.status_code == 200
+
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
+    assert rows == []
+
+
 async def test_export_csv_contains_header_and_rows(db_session: AsyncSession) -> None:
     campaign = await _make_campaign(db_session)
     await lead_service.capture_lead(db_session, "nog-2026", _lead(email="a@example.com"))

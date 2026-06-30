@@ -27,6 +27,7 @@ from app.schemas.campaigns import (
     LeadOut,
     LeadsListResponse,
 )
+from app.schemas.responses import MessageResponse
 from app.services import (
     lead_crm_sync,
     lead_export,
@@ -178,6 +179,22 @@ async def list_leads(
     return LeadsListResponse(
         status_code=status.HTTP_200_OK, leads=[_lead_out(lead) for lead in leads], total=total
     )
+
+
+@router.delete(
+    "/{campaign_id}/leads/{lead_id}", dependencies=[Depends(require_role("superadmin"))]
+)
+async def delete_lead(campaign_id: int, lead_id: int, session: SessionDep) -> MessageResponse:
+    """Permanently remove one captured lead — e.g. test/QA submissions, or a
+    visitor's deletion request. Superadmin-only: this is destructive (unlike CRM
+    sync or pack delivery, there's no retry/undo) and bypasses the CSV export
+    system-of-record, so it's scoped tighter than the rest of the admin surface."""
+    await _require_campaign(session, campaign_id)
+    lead = await leads_repo.get(session, lead_id)
+    if lead is None or lead.campaign_id != campaign_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    await leads_repo.delete(session, lead)
+    return MessageResponse(status_code=status.HTTP_200_OK, message="Lead deleted")
 
 
 @router.get("/{campaign_id}/stats", dependencies=[Depends(require_role(*_ADMIN_ROLES))])

@@ -32,6 +32,11 @@ async def update(session: AsyncSession, lead: Lead) -> Lead:
     return lead
 
 
+async def delete(session: AsyncSession, lead: Lead) -> None:
+    await session.delete(lead)
+    await session.commit()
+
+
 def _apply_filters(
     stmt: Select,
     *,
