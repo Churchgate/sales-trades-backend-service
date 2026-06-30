@@ -310,6 +310,36 @@ async def test_mailer_skips_without_key() -> None:
     assert ok is False
 
 
+async def test_mailer_from_override_falls_back_when_unset() -> None:
+    """A caller-supplied from_email/from_name wins when given; an empty/unset
+    override (e.g. event_mail_from_email before its sender is SendGrid-verified)
+    must fall back to the shared mail_from_email/mail_from_name, not send blank."""
+    settings = Settings(
+        sendgrid_api_key="SG.test",
+        mail_from_email="no-reply@churchgate.com",
+        mail_from_name="Churchgate Tech",
+    )
+    with respx.mock(base_url="https://api.sendgrid.com") as router:
+        route = router.post("/v3/mail/send").mock(return_value=httpx.Response(202))
+        await mailer.send_email(
+            "to@example.com", "S", "<p>h</p>", "h", settings=settings,
+            from_email="", from_name="",
+        )
+    sent_from = route.calls.last.request.content
+    assert b"no-reply@churchgate.com" in sent_from
+    assert b"Churchgate Tech" in sent_from
+
+    with respx.mock(base_url="https://api.sendgrid.com") as router:
+        route = router.post("/v3/mail/send").mock(return_value=httpx.Response(202))
+        await mailer.send_email(
+            "to@example.com", "S", "<p>h</p>", "h", settings=settings,
+            from_email="events@wtcabuja.com", from_name="WTC Abuja",
+        )
+    sent_from = route.calls.last.request.content
+    assert b"events@wtcabuja.com" in sent_from
+    assert b"WTC Abuja" in sent_from
+
+
 async def test_create_booking_marks_email_sent(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
