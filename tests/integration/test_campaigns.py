@@ -254,8 +254,11 @@ async def test_deliver_pack_sends_only_materials_with_assets(
 
     sent: dict = {}
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
-        sent.update(to_email=to_email, subject=subject, html=html, text=text)
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
+        sent.update(to_email=to_email, subject=subject, html=html, text=text,
+                     from_email=from_email, from_name=from_name)
         return True
 
     enabled = Settings(sendgrid_api_key="SG.test")
@@ -267,6 +270,9 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert result.pack_delivered_materials == ["Corporate Prospectus"]
     assert "Corporate Prospectus" in sent["html"]
     assert "Residence Floorplans" not in sent["html"]
+    # Event emails use their own sender identity, not bookings' no-reply address.
+    assert sent["from_email"] == enabled.event_mail_from_email
+    assert sent["from_name"] == enabled.event_mail_from_name
 
 
 async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
@@ -283,7 +289,9 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
 
     sent: dict = {}
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
         sent.update(html=html, text=text)
         return True
 
@@ -294,8 +302,86 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
     assert result.pack_delivered_materials == ["Office Floorplates"]
     assert "https://assets.example.com/office-1.png" in sent["html"]
     assert "https://assets.example.com/office-2.png" in sent["html"]
-    assert "Office Floorplates (1)" in sent["html"]
-    assert "Office Floorplates (2)" in sent["html"]
+    assert "Office Floorplates" in sent["html"]
+    assert "Download 1" in sent["html"]
+    assert "Download 2" in sent["html"]
+
+
+async def test_deliver_pack_includes_contact_info_when_configured(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Contact email/phone are optional, set later via campaign config — when
+    present they must show up; when absent (today's reality) no broken/empty
+    'Questions?' section should render."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead_no_contact = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
+        _fake_send.last = {"html": html, "text": text}
+        return True
+
+    enabled = Settings(sendgrid_api_key="SG.test")
+    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+
+    await pack_delivery.deliver_pack(db_session, lead_no_contact, campaign, settings=enabled)
+    assert "Questions?" not in _fake_send.last["html"]
+
+    campaign.config = {
+        **campaign.config,
+        "digital_pack": {
+            "contact_email": "events@wtcabuja.com",
+            "contact_phone": "+234 800 000 0000",
+        },
+    }
+    lead_with_contact = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="b@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+    await pack_delivery.deliver_pack(db_session, lead_with_contact, campaign, settings=enabled)
+    assert "events@wtcabuja.com" in _fake_send.last["html"]
+    assert "+234 800 000 0000" in _fake_send.last["html"]
+
+
+async def test_deliver_pack_includes_logo_when_configured(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Logo is optional, set later via campaign config — when present it must
+    render as an <img>; when absent, no broken image tag should appear."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead_no_logo = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
+        _fake_send.last = {"html": html, "text": text}
+        return True
+
+    enabled = Settings(sendgrid_api_key="SG.test")
+    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+
+    await pack_delivery.deliver_pack(db_session, lead_no_logo, campaign, settings=enabled)
+    assert "<img" not in _fake_send.last["html"]
+
+    logo_url = "https://assets.example.com/wtc-logo.png"
+    campaign.config = {**campaign.config, "digital_pack": {"logo_url": logo_url}}
+    lead_with_logo = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="b@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+    await pack_delivery.deliver_pack(db_session, lead_with_logo, campaign, settings=enabled)
+    assert f'<img src="{logo_url}"' in _fake_send.last["html"]
 
 
 async def test_deliver_pack_skipped_when_email_unconfigured(db_session: AsyncSession) -> None:
@@ -345,7 +431,9 @@ async def test_deliver_pending_picks_up_pending_packs(
     enabled = Settings(sendgrid_api_key="SG.test")
     monkeypatch.setattr(pack_delivery, "get_settings", lambda: enabled)
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
         return True
 
     monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
