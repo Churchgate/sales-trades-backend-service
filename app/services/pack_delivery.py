@@ -220,7 +220,13 @@ async def deliver_pack(
 
     subject, html, text = build_pack_email(lead, campaign, materials)
     sent = await mailer.send_email(
-        to_email=lead.email, subject=subject, html=html, text=text, settings=settings
+        to_email=lead.email,
+        subject=subject,
+        html=html,
+        text=text,
+        settings=settings,
+        from_email=settings.event_mail_from_email,
+        from_name=settings.event_mail_from_name,
     )
     if sent:
         lead.pack_delivery_status = PACK_SENT

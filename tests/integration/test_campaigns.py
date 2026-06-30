@@ -254,8 +254,11 @@ async def test_deliver_pack_sends_only_materials_with_assets(
 
     sent: dict = {}
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
-        sent.update(to_email=to_email, subject=subject, html=html, text=text)
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
+        sent.update(to_email=to_email, subject=subject, html=html, text=text,
+                     from_email=from_email, from_name=from_name)
         return True
 
     enabled = Settings(sendgrid_api_key="SG.test")
@@ -267,6 +270,9 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert result.pack_delivered_materials == ["Corporate Prospectus"]
     assert "Corporate Prospectus" in sent["html"]
     assert "Residence Floorplans" not in sent["html"]
+    # Event emails use their own sender identity, not bookings' no-reply address.
+    assert sent["from_email"] == enabled.event_mail_from_email
+    assert sent["from_name"] == enabled.event_mail_from_name
 
 
 async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
@@ -283,7 +289,9 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
 
     sent: dict = {}
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
         sent.update(html=html, text=text)
         return True
 
@@ -313,7 +321,9 @@ async def test_deliver_pack_includes_contact_info_when_configured(
         _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
     )
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
         _fake_send.last = {"html": html, "text": text}
         return True
 
@@ -352,7 +362,9 @@ async def test_deliver_pack_includes_logo_when_configured(
         _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
     )
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
         _fake_send.last = {"html": html, "text": text}
         return True
 
@@ -419,7 +431,9 @@ async def test_deliver_pending_picks_up_pending_packs(
     enabled = Settings(sendgrid_api_key="SG.test")
     monkeypatch.setattr(pack_delivery, "get_settings", lambda: enabled)
 
-    async def _fake_send(*, to_email, subject, html, text, settings=None):
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+    ):
         return True
 
     monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)

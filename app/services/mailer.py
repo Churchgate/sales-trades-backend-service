@@ -21,11 +21,20 @@ async def send_email(
     html: str,
     text: str,
     settings: Settings | None = None,
+    from_email: str | None = None,
+    from_name: str | None = None,
 ) -> bool:
     """Send one email. Returns True on success (HTTP 2xx), False otherwise.
 
     No-ops (returns False) when SENDGRID_API_KEY is unset — handy for local dev so
     bookings still work without a live SendGrid account.
+
+    `from_email`/`from_name` default to `settings.mail_from_email`/`mail_from_name`
+    (the shared no-reply sender) — pass them explicitly when a feature needs its
+    own sender identity (e.g. event emails from `events@wtcabuja.com` instead of
+    bookings' `no-reply@churchgate.com`). The override address must be a verified
+    Sender Identity (or part of an authenticated domain) in SendGrid, or sends
+    will fail.
     """
     settings = settings or get_settings()
 
@@ -37,7 +46,10 @@ async def send_email(
 
     payload = {
         "personalizations": [{"to": [{"email": to_email}]}],
-        "from": {"email": settings.mail_from_email, "name": settings.mail_from_name},
+        "from": {
+            "email": from_email or settings.mail_from_email,
+            "name": from_name or settings.mail_from_name,
+        },
         "subject": subject,
         "content": [
             {"type": "text/plain", "value": text},
