@@ -85,10 +85,15 @@ def build_pack_email(
     lead: Lead, campaign: Campaign, materials: list[tuple[str, list[str]]]
 ) -> tuple[str, str, str]:
     """(subject, html, text) for the digital-pack email. Copy is overridable via
-    config["digital_pack"] = {"subject": ..., "intro": ...}.
+    config["digital_pack"] = {
+        "subject": ..., "intro": ..., "logo_url": ...,
+        "contact_email": ..., "contact_phone": ...,
+    } — logo_url/contact_email/contact_phone are all optional and only render
+    once set (added to the live config as they're available, no code change
+    needed).
 
     A material with more than one file (e.g. two floorplate images) gets one
-    link per file, numbered under its label.
+    download button per file under a single heading.
     """
     pack_cfg = (campaign.config or {}).get("digital_pack", {})
     event_name = campaign.name
@@ -98,32 +103,80 @@ def build_pack_email(
         "Thank you for visiting us. As requested, here are your materials to "
         "download:",
     )
+    logo_url = pack_cfg.get("logo_url")
+    contact_email = pack_cfg.get("contact_email")
+    contact_phone = pack_cfg.get("contact_phone")
     greeting = f"Hello {lead.first_name}," if lead.first_name else "Hello,"
 
-    def _link_label(label: str, index: int, total: int) -> str:
-        return f"{label} ({index + 1})" if total > 1 else label
+    def _file_label(index: int, total: int) -> str:
+        return f"Download {index + 1}" if total > 1 else "Download"
 
     text_lines = [greeting, "", intro, ""]
     for label, urls in materials:
+        text_lines.append(f"{label}:")
         for i, url in enumerate(urls):
-            text_lines.append(f"- {_link_label(label, i, len(urls))}: {url}")
-    text = "\n".join(text_lines) + "\n"
+            text_lines.append(f"  {_file_label(i, len(urls))}: {url}")
+        text_lines.append("")
+    if contact_email or contact_phone:
+        text_lines.append("Questions? We're happy to help.")
+        if contact_email:
+            text_lines.append(f"Email: {contact_email}")
+        if contact_phone:
+            text_lines.append(f"Phone: {contact_phone}")
+    text = "\n".join(text_lines).rstrip() + "\n"
 
-    items = "\n".join(
-        f'    <li style="margin:8px 0">'
-        f'<a href="{url}" style="color:#c79a3a;font-weight:600;text-decoration:none">'
-        f"{_link_label(label, i, len(urls))}</a></li>"
-        for label, urls in materials
-        for i, url in enumerate(urls)
+    _button_style = (
+        "display:inline-block;background:#c79a3a;color:#15181e;text-decoration:none;"
+        "font-weight:600;font-size:13px;padding:8px 14px;border-radius:8px;"
+        "margin:4px 8px 0 0"
     )
+    cards = "\n".join(
+        f"""\
+  <div style="background:#f4f6f8;border-radius:8px;padding:16px;margin:12px 0">
+    <div style="font-weight:600;margin-bottom:4px">{label}</div>
+    {"".join(
+        f'<a href="{url}" style="{_button_style}">{_file_label(i, len(urls))}</a>'
+        for i, url in enumerate(urls)
+    )}
+  </div>"""
+        for label, urls in materials
+    )
+
+    contact_lines = []
+    if contact_email:
+        contact_lines.append(
+            f'<a href="mailto:{contact_email}" style="color:#c79a3a;text-decoration:none">'
+            f"{contact_email}</a>"
+        )
+    if contact_phone:
+        contact_lines.append(contact_phone)
+    contact_block = (
+        f"""\
+  <p style="color:#666;font-size:13px;margin-top:20px">
+    Questions? We're happy to help — {" · ".join(contact_lines)}
+  </p>"""
+        if contact_lines
+        else ""
+    )
+
+    logo_block = (
+        f"""\
+  <div style="text-align:center;margin-bottom:20px">
+    <img src="{logo_url}" alt="{event_name}" style="max-width:220px;height:auto" />
+  </div>"""
+        if logo_url
+        else ""
+    )
+
     html = f"""\
 <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#15181e">
+{logo_block}
+  <h2 style="margin-bottom:4px">Your digital pack</h2>
   <p>{greeting}</p>
   <p>{intro}</p>
-  <ul style="list-style:none;padding:0;margin:16px 0">
-{items}
-  </ul>
-  <p style="color:#666;font-size:13px">
+{cards}
+{contact_block}
+  <p style="color:#666;font-size:13px;margin-top:16px">
     Sent on behalf of {event_name}. If a link doesn't open, reply to this email
     and we'll help.
   </p>
