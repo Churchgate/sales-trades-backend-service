@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # --- Booth/stand lead capture ---
     # Management dashboard origin (CORS), if deployed separately from the API.
     dashboard_frontend_base_url: str = "http://localhost:3002"
+    # Kiosk/QR booth app origin (CORS) — the public-facing tablet + QR-to-phone
+    # form that POSTs to /campaigns/{slug}/leads directly (no proxy route by
+    # design). Distinct from dashboard_frontend_base_url, which is the
+    # admin-only campaign/leads management UI.
+    kiosk_frontend_base_url: str = "http://localhost:3003"
     # Live Freshsales contact write-sync. Off by default so an event can run
     # CSV-first (the guaranteed path) and flip this on once verified live.
     freshsales_lead_sync_enabled: bool = False

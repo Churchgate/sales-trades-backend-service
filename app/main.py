@@ -118,11 +118,12 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         # Sales dashboard (cookie auth), the standalone booking frontend (public API),
-        # and the booth/event management dashboard.
+        # the booth/event management dashboard, and the kiosk/QR booth app.
         allow_origins=[
             settings.frontend_base_url,
             settings.booking_frontend_base_url,
             settings.dashboard_frontend_base_url,
+            settings.kiosk_frontend_base_url,
         ],
         allow_credentials=True,  # required for cookies
         allow_methods=["*"],
