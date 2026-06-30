@@ -66,11 +66,17 @@ _NOG_2026_CONFIG: dict = {
         ],
     },
     # Optional copy override for the digital-pack email (defaults live in the service).
+    # contact_email/contact_phone still pending from the team — add once available,
+    # no redeploy needed (services/pack_delivery.py renders them conditionally).
     "digital_pack": {
         "subject": "Your WTC Abuja digital pack",
         "intro": (
             "Thank you for visiting the World Trade Center Abuja stand. As "
             "requested, here are your materials to download:"
+        ),
+        "logo_url": (
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
+            "campaign-assets/wtc-logo.png"
         ),
     },
     "consent": {

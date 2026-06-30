@@ -416,9 +416,11 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert result.pack_delivered_materials == ["Corporate Prospectus"]
     assert "Corporate Prospectus" in sent["html"]
     assert "Residence Floorplans" not in sent["html"]
-    # Event emails use their own sender identity, not bookings' no-reply address.
-    assert sent["from_email"] == enabled.event_mail_from_email
-    assert sent["from_name"] == enabled.event_mail_from_name
+    # deliver_pack always passes the event sender override through to mailer.send_email
+    # (which itself falls back to the shared sender when empty — see test_mailer_*
+    # in test_bookings.py); unset by default until events@wtcabuja.com is verified.
+    assert sent["from_email"] == enabled.event_mail_from_email == ""
+    assert sent["from_name"] == enabled.event_mail_from_name == ""
 
 
 async def test_deliver_pack_sends_every_file_for_a_multi_file_material(

@@ -61,12 +61,15 @@ class Settings(BaseSettings):
     # (e.g. captured offline, or a transient send failure). Capture also attempts
     # delivery inline so most packs go out immediately; this just retries the rest.
     pack_delivery_interval_minutes: int = 5
-    # Digital-pack emails send from their own sender identity, distinct from
-    # bookings' no-reply@churchgate.com (a separate application's address) — must
-    # be a verified Sender Identity (or part of an authenticated domain) in
-    # SendGrid, or sends will fail.
-    event_mail_from_email: str = "events@wtcabuja.com"
-    event_mail_from_name: str = "WTC Abuja"
+    # Digital-pack emails can send from their own sender identity, distinct from
+    # bookings' no-reply@churchgate.com (a separate application's address) — but
+    # only once that address is a verified Sender Identity (or part of an
+    # authenticated domain) in SendGrid, or sends fail outright (403). Confirmed
+    # 2026-06-30: events@wtcabuja.com is NOT yet verified — empty by default so
+    # event emails fall back to the shared (already-verified) no-reply sender
+    # until this is set. Set both env vars once verified; no redeploy needed.
+    event_mail_from_email: str = ""
+    event_mail_from_name: str = ""
 
     # --- JWT ---
     jwt_secret: str = "change-me-in-production"
