@@ -12,6 +12,16 @@ CRM_SYNCED = "synced"
 CRM_FAILED = "failed"
 CRM_SKIPPED = "skipped"  # live sync disabled, or no-sync campaign
 
+# Digital-pack delivery lifecycle. The "Send Me the Digital Pack" form promises
+# the visitor their selected materials by email — capture saves the request and a
+# background job (mirroring CRM sync) emails the assets, so capture never blocks
+# on email being reachable. Same offline-safe shape as the CRM lifecycle above.
+PACK_NOT_REQUESTED = "not_requested"  # no deliverable materials on this lead
+PACK_PENDING = "pending"
+PACK_SENT = "sent"
+PACK_FAILED = "failed"
+PACK_SKIPPED = "skipped"  # email transport not configured
+
 
 class Lead(SQLModel, table=True):
     """A visitor captured at a stand/booth, scoped to a campaign.
@@ -29,6 +39,8 @@ class Lead(SQLModel, table=True):
         Index("idx_leads_campaign_sync", "campaign_id", "crm_sync_status"),
         Index("idx_leads_campaign_email", "campaign_id", "email", unique=True),
         Index("idx_leads_interests", "interests", postgresql_using="gin"),
+        # Delivery job scans pending/failed packs across campaigns (like CRM sync).
+        Index("idx_leads_campaign_pack", "campaign_id", "pack_delivery_status"),
     )
 
     id: int | None = Field(
@@ -82,3 +94,16 @@ class Lead(SQLModel, table=True):
     )
     crm_contact_id: str | None = None
     crm_error: str | None = None
+
+    # Digital-pack email delivery. `pack_delivered_materials` records exactly which
+    # materials were emailed (resolved against the campaign's asset map) — kept
+    # alongside the verbatim `requested_materials` so the request-vs-fulfilment gap
+    # is analysable per lead.
+    pack_delivery_status: str = Field(default=PACK_NOT_REQUESTED)
+    pack_delivered_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    pack_delivered_materials: list[str] | None = Field(
+        default=None, sa_column=Column(ARRAY(String))
+    )
+    pack_delivery_error: str | None = None

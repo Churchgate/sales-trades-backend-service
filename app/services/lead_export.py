@@ -32,6 +32,9 @@ _FIELDS = [
     "consent_at",
     "crm_sync_status",
     "crm_contact_id",
+    "pack_delivery_status",
+    "pack_delivered_at",
+    "pack_delivered_materials",
 ]
 
 
