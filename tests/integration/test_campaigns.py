@@ -286,6 +286,83 @@ async def test_delete_lead_requires_superadmin_over_http(db_session: AsyncSessio
     assert rows == []
 
 
+async def test_bulk_delete_leads_no_filters_purges_campaign(db_session: AsyncSession) -> None:
+    campaign = await _make_campaign(db_session)
+    await lead_service.capture_lead(db_session, "nog-2026", _lead(email="a@example.com"))
+    await lead_service.capture_lead(db_session, "nog-2026", _lead(email="b@example.com"))
+    resp = await campaigns_api.bulk_delete_leads(campaign.id, db_session, confirm=True)
+    assert resp.status_code == 200
+    assert resp.message == "Deleted 2 lead(s)"
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
+    assert rows == []
+
+
+async def test_bulk_delete_leads_respects_filters(db_session: AsyncSession) -> None:
+    """Same filters as GET .../leads — only matching leads are removed."""
+    campaign = await _make_campaign(db_session)
+    await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="a@example.com", interests=["Office Leasing"])
+    )
+    await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="b@example.com", interests=["Clubhouse"])
+    )
+    resp = await campaigns_api.bulk_delete_leads(
+        campaign.id, db_session, confirm=True, interest="Office Leasing"
+    )
+    assert resp.message == "Deleted 1 lead(s)"
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
+    assert len(rows) == 1
+    assert rows[0].email == "b@example.com"
+
+
+async def test_bulk_delete_leads_requires_confirm(db_session: AsyncSession) -> None:
+    """confirm=true is required on every call, not just role — the default
+    (no filters, no confirm) would otherwise silently wipe a whole campaign."""
+    campaign = await _make_campaign(db_session)
+    await lead_service.capture_lead(db_session, "nog-2026", _lead())
+    with pytest.raises(HTTPException) as exc_info:
+        await campaigns_api.bulk_delete_leads(campaign.id, db_session, confirm=False)
+    assert exc_info.value.status_code == 400
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
+    assert len(rows) == 1
+
+
+async def test_bulk_delete_leads_requires_superadmin_over_http(db_session: AsyncSession) -> None:
+    import httpx
+
+    from app.api.dependencies import get_current_user
+    from app.core.database import get_session
+    from app.main import create_app
+    from app.models.dashboard_user import DashboardUser
+
+    campaign = await _make_campaign(db_session)
+    await lead_service.capture_lead(db_session, "nog-2026", _lead())
+
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+
+    def _client_as(role: str) -> httpx.AsyncClient:
+        user = DashboardUser(email="staff@churchgate.com", role=role, owner_id=None,
+                              hashed_password="x")
+        app.dependency_overrides[get_current_user] = lambda: user
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+    async with _client_as("admin") as c:
+        res = await c.delete(f"/api/v1/campaigns/{campaign.id}/leads?confirm=true")
+    assert res.status_code == 403
+
+    async with _client_as("superadmin") as c:
+        res = await c.delete(f"/api/v1/campaigns/{campaign.id}/leads?confirm=true")
+    assert res.status_code == 200
+
+    rows = await leads_repo.list_for_campaign(db_session, campaign.id)
+    assert rows == []
+
+
 async def test_export_csv_contains_header_and_rows(db_session: AsyncSession) -> None:
     campaign = await _make_campaign(db_session)
     await lead_service.capture_lead(db_session, "nog-2026", _lead(email="a@example.com"))

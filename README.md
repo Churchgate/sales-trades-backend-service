@@ -193,11 +193,95 @@ All under `/api/v1` unless noted. Auth uses JWT in an httpOnly cookie (browsers)
 | POST | `/admin/sync/deals` | gmd, superadmin | trigger deal sync |
 | POST | `/admin/users` | superadmin | create a dashboard user |
 | GET | `/admin/users` | superadmin | list users |
+| GET | `/campaigns/{slug}` | public | booth/QR app reads its dynamic form config |
+| POST | `/campaigns/{slug}/leads` | public | capture a visitor lead (see [Booth/stand lead capture](#boothstand-lead-capture)) |
+| GET | `/campaigns/{id}/leads` | admin, superadmin | list/filter leads |
+| GET | `/campaigns/{id}/stats` | admin, superadmin | campaign dashboard stats |
+| GET | `/campaigns/{id}/leads/export.csv` | admin, superadmin | CSV export (system of record) |
+| POST | `/campaigns/{id}/resync` | admin, superadmin | retry pending/failed CRM pushes |
+| POST | `/campaigns/{id}/resend-packs` | admin, superadmin | retry pending/failed digital-pack emails |
+| DELETE | `/campaigns/{id}/leads/{lead_id}` | superadmin | delete one lead (no undo) |
+| DELETE | `/campaigns/{id}/leads` | superadmin | bulk-delete leads matching filters; requires `confirm=true` |
 | POST | `/webhooks/freshsales/deal` | HMAC header | ingest a deal webhook *(no `/api/v1`)* |
 | GET | `/healthz` · `/readyz` | public | liveness · readiness (db ping) |
 
 Responses use a consistent envelope (`status`, `status_code`, plus typed payload)
 defined in `app/schemas/responses.py`.
+
+---
+
+## Booth/stand lead capture
+
+The WTC Abuja Interactive Stand App (booth tablet + QR-to-phone form) captures
+visitor leads against a **campaign** — a reusable, config-driven container for
+one event/activation (`app/models/campaign.py`). A campaign's interest/material
+options, CRM tag map, timing vocabulary, consent copy, and digital-pack copy/
+assets all live in `Campaign.config` (JSONB), seeded via `scripts/seed_campaigns.py`
+— a new event is a new config row, not a code change.
+
+**Capture never depends on anything else being reachable.** `POST
+/campaigns/{slug}/leads` validates and persists immediately; CRM sync and
+digital-pack email both happen after, asynchronously, and never block or fail
+the capture response (`app/services/lead_service.py`).
+
+### Idempotency / dedup contract
+
+Dedup key is **`(campaign_id, email)`** — a unique DB index
+(`idx_leads_campaign_email`), not just application logic. Email is lowercased
+and trimmed before comparison.
+
+- **Resubmitting the same lead** (same email, same campaign — e.g. an
+  offline-queued kiosk retry reconnecting) is an **UPDATE onto the existing
+  row, never a new INSERT.** All fields are overwritten from the latest
+  payload (last-write-wins, not a per-field merge), and `crm_sync_status` /
+  `pack_delivery_status` both reset to `pending` so the new submission gets
+  (re)synced and (re)delivered.
+- **Concurrent retries** (two requests for the same email racing the
+  dedup check before either commits) are also safe: the second request's
+  `INSERT` hits the unique-index violation, which `capture_lead` catches and
+  recovers from by re-fetching and merging onto the row the first request
+  created — never an unhandled 500, never a duplicate row.
+- Dedup is **email-only**. A retry that changes the email (a new client-side
+  id, different `device_id`, etc.) is treated as a new lead, not a duplicate
+  — by design, since email is the visitor-identifying field.
+- There is no separate `idempotency_key`/`client_request_id` field or header —
+  none is needed given the above; the email-based dedup *is* the idempotency
+  mechanism.
+
+### CRM sync and digital-pack delivery — both fire-and-forget, both retryable
+
+Two independent async lifecycles run off the same captured `Lead` row, each
+mirroring the other's shape (`pending` → `sent`/`synced` | `failed` | `skipped`):
+
+- **CRM sync** (`app/services/lead_crm_sync.py`) pushes the lead to Freshsales
+  as a contact. Gated by `FRESHSALES_LEAD_SYNC_ENABLED` (off by default — an
+  event can run CSV-export-first and flip this on once verified); when off,
+  every lead is `crm_sync_status=skipped`. The scheduled `lead_crm_sync_job`
+  (every `LEAD_CRM_SYNC_INTERVAL_MINUTES`) sweeps **all campaigns**, not just
+  one — there's no per-campaign toggle today.
+- **Digital-pack delivery** (`app/services/pack_delivery.py`) emails the
+  visitor their requested materials, resolved against the campaign's
+  `config["materials_assets"]` map. Attempted inline at capture (so it arrives
+  "right away") with the scheduled `pack_delivery_job` as a backstop for
+  anything not sent inline. Gated only by `SENDGRID_API_KEY` being set — no
+  per-campaign sandbox/test-mode switch exists, so any campaign with
+  `requested_materials` set will trigger a real send to whatever email was
+  submitted. For QA, use a test inbox you control rather than relying on a
+  backend-side suppression.
+
+### Safe testing / QA cleanup
+
+There's no sandboxed "test mode" — testing against a real campaign sends a
+real digital-pack email (if `SENDGRID_API_KEY` is set) and creates a real row.
+To keep test data out of a live event's stats:
+
+1. Create a dedicated campaign (`POST /campaigns`, admin-gated) with its own
+   slug, e.g. `kiosk-app-qa`, instead of submitting test leads to the real
+   event's slug.
+2. Clean up afterwards with `DELETE /campaigns/{id}/leads?confirm=true`
+   (superadmin-only, optionally filtered the same way as `GET .../leads`) to
+   purge the whole test campaign, or `DELETE /campaigns/{id}/leads/{lead_id}`
+   for a single row. Neither has an undo.
 
 ---
 
