@@ -42,17 +42,28 @@ _NOG_2026_CONFIG: dict = {
     ],
     "timing_options": ["Immediate", "0-3 months", "3-6 months", "6-12 months", "Future"],
     # Digital-pack delivery (services/pack_delivery.py): each material label maps to
-    # the download link emailed to a visitor who requested it. Keyed by the exact
-    # `materials` labels above. REPLACE these placeholders with the real hosted
-    # asset URLs before the campaign goes live (2026-07-05) — anything without a
-    # link here is captured/tagged but not emailed.
+    # the download link(s) emailed to a visitor who requested it — a list, since one
+    # material can be more than one file (e.g. floorplates as separate images).
+    # Keyed by the exact `materials` labels above; a label with no entry is
+    # captured/tagged but not emailed until one is added here.
+    #
+    # Hosted in Supabase Storage, bucket `campaign-assets` (public). Still
+    # missing real files for Corporate Prospectus, Security & Continuity Brief,
+    # Clubhouse Overview — add their entries here as those land from other
+    # departments, then re-run this script.
     "materials_assets": {
-        "Corporate Prospectus": "https://assets.wtcabuja.com/nog-2026/corporate-prospectus.pdf",
-        "Office Floorplates": "https://assets.wtcabuja.com/nog-2026/office-floorplates.pdf",
-        "Residence Floorplans": "https://assets.wtcabuja.com/nog-2026/residence-floorplans.pdf",
-        "Security & Continuity Brief": "https://assets.wtcabuja.com/nog-2026/security-continuity-brief.pdf",
-        "Clubhouse Overview": "https://assets.wtcabuja.com/nog-2026/clubhouse-overview.pdf",
-        "Location Overview": "https://assets.wtcabuja.com/nog-2026/location-overview.pdf",
+        "Office Floorplates": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate2.webp",
+        ],
+        "Residence Floorplans": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-1br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-2br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-3br.png",
+        ],
+        "Location Overview": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/location_overview.png",
+        ],
     },
     # Optional copy override for the digital-pack email (defaults live in the service).
     "digital_pack": {

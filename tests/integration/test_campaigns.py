@@ -24,8 +24,13 @@ _CONFIG = {
         "Residence Floorplans",
     ],
     "materials_assets": {
+        # Bare string: single-file material (normalised to a 1-item list).
         "Corporate Prospectus": "https://assets.example.com/prospectus.pdf",
-        "Office Floorplates": "https://assets.example.com/office.pdf",
+        # List: multi-file material (e.g. several floorplate images).
+        "Office Floorplates": [
+            "https://assets.example.com/office-1.png",
+            "https://assets.example.com/office-2.png",
+        ],
         # Residence Floorplans intentionally has no asset (tests the gap path).
     },
 }
@@ -262,6 +267,35 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert result.pack_delivered_materials == ["Corporate Prospectus"]
     assert "Corporate Prospectus" in sent["html"]
     assert "Residence Floorplans" not in sent["html"]
+
+
+async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Office Floorplates has two images configured — both must be linked,
+    each labelled distinctly so the visitor can tell them apart."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(requested_materials=["Office Floorplates"])
+    )
+
+    sent: dict = {}
+
+    async def _fake_send(*, to_email, subject, html, text, settings=None):
+        sent.update(html=html, text=text)
+        return True
+
+    enabled = Settings(sendgrid_api_key="SG.test")
+    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+
+    result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    assert result.pack_delivered_materials == ["Office Floorplates"]
+    assert "https://assets.example.com/office-1.png" in sent["html"]
+    assert "https://assets.example.com/office-2.png" in sent["html"]
+    assert "Office Floorplates (1)" in sent["html"]
+    assert "Office Floorplates (2)" in sent["html"]
 
 
 async def test_deliver_pack_skipped_when_email_unconfigured(db_session: AsyncSession) -> None:
