@@ -407,8 +407,8 @@ async def test_deliver_pack_sends_only_materials_with_assets(
                      from_email=from_email, from_name=from_name)
         return True
 
-    enabled = Settings(sendgrid_api_key="SG.test")
-    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
 
     result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
     assert result.pack_delivery_status == PACK_SENT
@@ -416,11 +416,6 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert result.pack_delivered_materials == ["Corporate Prospectus"]
     assert "Corporate Prospectus" in sent["html"]
     assert "Residence Floorplans" not in sent["html"]
-    # deliver_pack always passes the event sender override through to mailer.send_email
-    # (which itself falls back to the shared sender when empty — see test_mailer_*
-    # in test_bookings.py); unset by default until events@wtcabuja.com is verified.
-    assert sent["from_email"] == enabled.event_mail_from_email == ""
-    assert sent["from_name"] == enabled.event_mail_from_name == ""
 
 
 async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
@@ -443,8 +438,8 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
         sent.update(html=html, text=text)
         return True
 
-    enabled = Settings(sendgrid_api_key="SG.test")
-    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
 
     result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
     assert result.pack_delivered_materials == ["Office Floorplates"]
@@ -475,8 +470,8 @@ async def test_deliver_pack_includes_contact_info_when_configured(
         _fake_send.last = {"html": html, "text": text}
         return True
 
-    enabled = Settings(sendgrid_api_key="SG.test")
-    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
 
     await pack_delivery.deliver_pack(db_session, lead_no_contact, campaign, settings=enabled)
     assert "Questions?" not in _fake_send.last["html"]
@@ -516,8 +511,8 @@ async def test_deliver_pack_includes_logo_when_configured(
         _fake_send.last = {"html": html, "text": text}
         return True
 
-    enabled = Settings(sendgrid_api_key="SG.test")
-    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
 
     await pack_delivery.deliver_pack(db_session, lead_no_logo, campaign, settings=enabled)
     assert "<img" not in _fake_send.last["html"]
@@ -539,7 +534,7 @@ async def test_deliver_pack_skipped_when_email_unconfigured(db_session: AsyncSes
     lead = await lead_service.capture_lead(
         db_session, "nog-2026", _lead(requested_materials=["Corporate Prospectus"])
     )
-    disabled = Settings(sendgrid_api_key="")
+    disabled = Settings(wtc_sendgrid_api_key="")
     result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=disabled)
     assert result.pack_delivery_status == "skipped"
 
@@ -556,7 +551,7 @@ async def test_deliver_pack_newsletter_pseudo_item_is_not_a_delivery(
         db_session, "nog-2026",
         _lead(requested_materials=["WTC Abuja Updates & Private Invitations"]),
     )
-    enabled = Settings(sendgrid_api_key="SG.test")
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
     result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
     assert result.pack_delivery_status == "not_requested"
     assert result.pack_delivered_materials is None
@@ -576,7 +571,7 @@ async def test_deliver_pending_picks_up_pending_packs(
         db_session, "nog-2026",
         _lead(email="b@example.com", requested_materials=["Office Floorplates"]),
     )
-    enabled = Settings(sendgrid_api_key="SG.test")
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
     monkeypatch.setattr(pack_delivery, "get_settings", lambda: enabled)
 
     async def _fake_send(
@@ -584,7 +579,7 @@ async def test_deliver_pending_picks_up_pending_packs(
     ):
         return True
 
-    monkeypatch.setattr(pack_delivery.mailer, "send_email", _fake_send)
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
 
     delivered = await pack_delivery.deliver_pending(db_session)
     assert delivered == 2

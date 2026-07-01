@@ -48,9 +48,9 @@ _NOG_2026_CONFIG: dict = {
     # captured/tagged but not emailed until one is added here.
     #
     # Hosted in Supabase Storage, bucket `campaign-assets` (public). Still
-    # missing real files for Corporate Prospectus, Security & Continuity Brief,
-    # Clubhouse Overview — add their entries here as those land from other
-    # departments, then re-run this script.
+    # missing real files for Corporate Prospectus, Clubhouse Overview — add
+    # their entries here as those land from other departments, then re-run
+    # this script.
     "materials_assets": {
         "Office Floorplates": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
@@ -63,6 +63,9 @@ _NOG_2026_CONFIG: dict = {
         ],
         "Location Overview": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/location_overview.png",
+        ],
+        "Security & Continuity Brief": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
         ],
     },
     # Optional copy override for the digital-pack email (defaults live in the service).
