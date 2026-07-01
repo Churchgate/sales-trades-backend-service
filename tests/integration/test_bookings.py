@@ -29,10 +29,14 @@ def _slot(hours_from_now: int, duration_hours: int = 1) -> tuple[datetime, datet
 # --- service layer ---
 
 
-async def test_create_booking_confirms_and_generates_code(db_session: AsyncSession) -> None:
+async def test_create_booking_confirms_and_generates_code(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
     room = await _make_room(db_session)
     start, end = _slot(24)
 
+    # Force empty key so the send is skipped and no real network call is made.
+    monkeypatch.setattr(booking_service, "get_settings", lambda: Settings(sendgrid_api_key=""))
     booking, returned_room, email_sent = await booking_service.create_booking(
         db_session,
         room_id=room.id,
@@ -47,7 +51,6 @@ async def test_create_booking_confirms_and_generates_code(db_session: AsyncSessi
     assert len(booking.access_code) == 6
     assert booking.access_code.isdigit()
     assert returned_room.id == room.id
-    # No SendGrid key configured in tests -> send is skipped, not an error.
     assert email_sent is False
 
 
@@ -312,8 +315,7 @@ async def test_mailer_skips_without_key() -> None:
 
 async def test_mailer_from_override_falls_back_when_unset() -> None:
     """A caller-supplied from_email/from_name wins when given; an empty/unset
-    override (e.g. event_mail_from_email before its sender is SendGrid-verified)
-    must fall back to the shared mail_from_email/mail_from_name, not send blank."""
+    override must fall back to the shared mail_from_email/mail_from_name, not send blank."""
     settings = Settings(
         sendgrid_api_key="SG.test",
         mail_from_email="no-reply@churchgate.com",
@@ -347,7 +349,6 @@ async def test_create_booking_marks_email_sent(
     room = await _make_room(db_session)
     start, end = _slot(24)
 
-    # _send_confirmation reads settings via booking_service.get_settings.
     configured = Settings(sendgrid_api_key="SG.test", mail_from_email="from@example.com")
     monkeypatch.setattr(booking_service, "get_settings", lambda: configured)
 

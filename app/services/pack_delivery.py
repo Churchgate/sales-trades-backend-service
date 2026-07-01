@@ -39,7 +39,7 @@ from app.models.lead import (
     Lead,
 )
 from app.repositories import campaigns_repo, leads_repo
-from app.services import mailer
+from app.services import campaign_mailer
 
 logger = get_logger(__name__)
 
@@ -81,109 +81,6 @@ def _real_materials_requested(lead: Lead, campaign: Campaign) -> bool:
     return any(label in known for label in (lead.requested_materials or []))
 
 
-def build_pack_email(
-    lead: Lead, campaign: Campaign, materials: list[tuple[str, list[str]]]
-) -> tuple[str, str, str]:
-    """(subject, html, text) for the digital-pack email. Copy is overridable via
-    config["digital_pack"] = {
-        "subject": ..., "intro": ..., "logo_url": ...,
-        "contact_email": ..., "contact_phone": ...,
-    } — logo_url/contact_email/contact_phone are all optional and only render
-    once set (added to the live config as they're available, no code change
-    needed).
-
-    A material with more than one file (e.g. two floorplate images) gets one
-    download button per file under a single heading.
-    """
-    pack_cfg = (campaign.config or {}).get("digital_pack", {})
-    event_name = campaign.name
-    subject = pack_cfg.get("subject", f"Your {event_name} digital pack")
-    intro = pack_cfg.get(
-        "intro",
-        "Thank you for visiting us. As requested, here are your materials to "
-        "download:",
-    )
-    logo_url = pack_cfg.get("logo_url")
-    contact_email = pack_cfg.get("contact_email")
-    contact_phone = pack_cfg.get("contact_phone")
-    greeting = f"Hello {lead.first_name}," if lead.first_name else "Hello,"
-
-    def _file_label(index: int, total: int) -> str:
-        return f"Download {index + 1}" if total > 1 else "Download"
-
-    text_lines = [greeting, "", intro, ""]
-    for label, urls in materials:
-        text_lines.append(f"{label}:")
-        for i, url in enumerate(urls):
-            text_lines.append(f"  {_file_label(i, len(urls))}: {url}")
-        text_lines.append("")
-    if contact_email or contact_phone:
-        text_lines.append("Questions? We're happy to help.")
-        if contact_email:
-            text_lines.append(f"Email: {contact_email}")
-        if contact_phone:
-            text_lines.append(f"Phone: {contact_phone}")
-    text = "\n".join(text_lines).rstrip() + "\n"
-
-    _button_style = (
-        "display:inline-block;background:#c79a3a;color:#15181e;text-decoration:none;"
-        "font-weight:600;font-size:13px;padding:8px 14px;border-radius:8px;"
-        "margin:4px 8px 0 0"
-    )
-    cards = "\n".join(
-        f"""\
-  <div style="background:#f4f6f8;border-radius:8px;padding:16px;margin:12px 0">
-    <div style="font-weight:600;margin-bottom:4px">{label}</div>
-    {"".join(
-        f'<a href="{url}" style="{_button_style}">{_file_label(i, len(urls))}</a>'
-        for i, url in enumerate(urls)
-    )}
-  </div>"""
-        for label, urls in materials
-    )
-
-    contact_lines = []
-    if contact_email:
-        contact_lines.append(
-            f'<a href="mailto:{contact_email}" style="color:#c79a3a;text-decoration:none">'
-            f"{contact_email}</a>"
-        )
-    if contact_phone:
-        contact_lines.append(contact_phone)
-    contact_block = (
-        f"""\
-  <p style="color:#666;font-size:13px;margin-top:20px">
-    Questions? We're happy to help — {" · ".join(contact_lines)}
-  </p>"""
-        if contact_lines
-        else ""
-    )
-
-    logo_block = (
-        f"""\
-  <div style="text-align:center;margin-bottom:20px">
-    <img src="{logo_url}" alt="{event_name}" style="max-width:220px;height:auto" />
-  </div>"""
-        if logo_url
-        else ""
-    )
-
-    html = f"""\
-<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#15181e">
-{logo_block}
-  <h2 style="margin-bottom:4px">Your digital pack</h2>
-  <p>{greeting}</p>
-  <p>{intro}</p>
-{cards}
-{contact_block}
-  <p style="color:#666;font-size:13px;margin-top:16px">
-    Sent on behalf of {event_name}. If a link doesn't open, reply to this email
-    and we'll help.
-  </p>
-</div>
-"""
-    return subject, html, text
-
 
 async def deliver_pack(
     session: AsyncSession,
@@ -213,20 +110,18 @@ async def deliver_pack(
             lead.pack_delivery_error = None
         return await leads_repo.update(session, lead)
 
-    if not settings.sendgrid_api_key:
+    if not settings.wtc_sendgrid_api_key:
         lead.pack_delivery_status = PACK_SKIPPED
         lead.pack_delivery_error = "email transport not configured"
         return await leads_repo.update(session, lead)
 
-    subject, html, text = build_pack_email(lead, campaign, materials)
-    sent = await mailer.send_email(
+    subject, html, text = campaign_mailer.build_pack_email(lead, campaign, materials)
+    sent = await campaign_mailer.send_campaign_email(
         to_email=lead.email,
         subject=subject,
         html=html,
         text=text,
         settings=settings,
-        from_email=settings.event_mail_from_email,
-        from_name=settings.event_mail_from_name,
     )
     if sent:
         lead.pack_delivery_status = PACK_SENT

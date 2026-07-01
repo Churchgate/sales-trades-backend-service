@@ -1,8 +1,9 @@
 """Outbound transactional email via SendGrid (v3 Mail Send API).
 
-Kept deliberately thin: a single async send over httpx, mirroring the Freshsales
-client's style. Callers treat email as best-effort — a send failure is logged and
-swallowed so it never rolls back a confirmed booking.
+Used for bookings, room confirmations, and dashboard user invites.
+Campaign-specific emails (digital packs, lead notifications) use
+campaign_mailer.py (SMTP) so they can send from a dedicated sender
+identity without touching the shared no-reply account.
 """
 
 import httpx
@@ -26,15 +27,11 @@ async def send_email(
 ) -> bool:
     """Send one email. Returns True on success (HTTP 2xx), False otherwise.
 
-    No-ops (returns False) when SENDGRID_API_KEY is unset — handy for local dev so
-    bookings still work without a live SendGrid account.
+    No-ops (returns False) when SENDGRID_API_KEY is unset — handy for local dev.
 
-    `from_email`/`from_name` default to `settings.mail_from_email`/`mail_from_name`
-    (the shared no-reply sender) — pass them explicitly when a feature needs its
-    own sender identity (e.g. event emails from `events@wtcabuja.com` instead of
-    bookings' `no-reply@churchgate.com`). The override address must be a verified
-    Sender Identity (or part of an authenticated domain) in SendGrid, or sends
-    will fail.
+    `from_email`/`from_name` default to `settings.mail_from_email`/`mail_from_name`.
+    Pass them explicitly when a caller needs its own sender identity. The override
+    address must be a verified Sender Identity in SendGrid or sends will fail.
     """
     settings = settings or get_settings()
 
@@ -79,9 +76,8 @@ async def send_invite_email(
     settings: Settings | None = None,
 ) -> bool:
     """Invite a new dashboard user: link to the login page + their temporary
-    password, with a nudge to change it on first sign-in. Best-effort like all
-    sends — returns False (and the caller surfaces the password) if SendGrid is
-    unconfigured."""
+    password. Best-effort — returns False (caller surfaces the password) if
+    SendGrid is unconfigured."""
     settings = settings or get_settings()
     login_url = f"{settings.frontend_base_url.rstrip('/')}/admin/login"
 

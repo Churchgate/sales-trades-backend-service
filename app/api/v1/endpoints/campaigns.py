@@ -29,6 +29,7 @@ from app.schemas.campaigns import (
 )
 from app.schemas.responses import MessageResponse
 from app.services import (
+    campaign_mailer,
     lead_crm_sync,
     lead_export,
     lead_scoring,
@@ -131,10 +132,11 @@ async def capture_lead(
     except lead_service.CampaignInactiveError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    if lead.pack_delivery_status == PACK_PENDING:
-        campaign = await campaigns_repo.get(session, lead.campaign_id)
-        if campaign is not None:
+    campaign = await campaigns_repo.get(session, lead.campaign_id)
+    if campaign is not None:
+        if lead.pack_delivery_status == PACK_PENDING:
             lead = await pack_delivery.deliver_pack(session, lead, campaign)
+        await campaign_mailer.send_lead_notification(lead, campaign)
 
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
 

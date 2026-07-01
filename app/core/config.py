@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     mail_from_email: str = "no-reply@example.com"
     mail_from_name: str = "WTC Abuja Bookings"
 
+    # --- Campaign emails (SendGrid — WTC Abuja account) ---
+    # Digital-pack delivery and lead-capture notifications use a separate SendGrid
+    # account (enquiries@wtcabuja.com) rather than the shared Churchgate no-reply.
+    # Set WTC_SENDGRID_API_KEY to enable; leave empty to skip sends in dev/QA.
+    wtc_sendgrid_api_key: str = ""
+    # Recipient for the internal "New Lead" notification sent to the sales team.
+    # Leave empty to disable notifications (e.g. dev/QA environments).
+    campaign_notification_email: str = ""
+
     # --- Booth/stand lead capture ---
     # Management dashboard origin (CORS), if deployed separately from the API.
     dashboard_frontend_base_url: str = "http://localhost:3002"
