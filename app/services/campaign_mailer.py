@@ -293,6 +293,152 @@ async def send_lead_notification(
         logger.exception("lead notification email failed", lead_id=lead.id)
 
 
+# ══ Visitor emails — pack delivery + viewing confirmation ═════════════════════
+# Rebuilt from the WTC-Abuja-Email-Templates designs as bulletproof, table-only
+# HTML (no position/flex/object-fit/filter/gradients) so Gmail and Outlook render
+# them. Light "cream" brand: dark header, white body, gold accents, serif heads.
+
+_C_CREAM = "#f0ede6"
+_C_INK = "#111110"
+_C_INK_SOFT = "#444442"
+_C_MUTED = "#888885"
+_C_GOLD = "#c9a84c"
+_C_GOLD_DK = "#b8960c"
+_C_LINE = "#e0ddd6"
+_C_PANEL = "#f4f1eb"
+_C_STRIP = "#1a1a18"
+_C_FOOT = "#0d0d0c"
+_C_HERO_BG = "#111110"
+_SERIF = "Georgia,'Times New Roman',serif"
+_SANS = "'Helvetica Neue',Helvetica,Arial,sans-serif"
+
+
+def _c_button(url: str, label: str, *, gold: bool = False) -> str:
+    """Bulletproof (Outlook-safe) download button: bgcolor on a table cell."""
+    bg = _C_GOLD_DK if gold else _C_INK
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+        f'style="display:inline-block;margin:6px 0 0 8px;">'
+        f'<tr><td bgcolor="{bg}" style="border-radius:2px;">'
+        f'<a href="{url}" target="_blank" style="display:inline-block;padding:11px 22px;'
+        f'font-family:{_SANS};font-size:10px;font-weight:700;letter-spacing:0.1em;'
+        f'text-transform:uppercase;color:#ffffff;text-decoration:none;">{label} &#8595;</a>'
+        f"</td></tr></table>"
+    )
+
+
+def _c_header(tag: str, heading_html: str, hero_url: str, logo_url: str) -> str:
+    """Dark hero with the logo + heading overlaid on the (pre-darkened) photo.
+
+    Bulletproof background: the `background` attribute carries the image for Gmail/
+    Apple Mail while an mso-only VML `<v:rect>` fills it for Outlook; `bgcolor`
+    is the solid-dark fallback if a client drops both. The photo must already be
+    dark enough for white text (we darken it before hosting) since email clients
+    strip CSS gradient scrims. Content flows normally (no position/flex).
+    """
+    if logo_url:
+        brand = (
+            f'<img src="{logo_url}" width="160" alt="World Trade Center Abuja" '
+            f'style="width:160px;height:auto;display:block;border:0;">'
+        )
+    else:
+        brand = (
+            f'<span style="font-family:{_SANS};font-size:11px;font-weight:700;'
+            f'letter-spacing:0.22em;text-transform:uppercase;color:#ffffff;">'
+            f"World Trade Center <span style=\"color:{_C_GOLD};\">Abuja</span></span>"
+        )
+    inner = f"""\
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+              <tr>
+                <td style="padding:30px 40px 34px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+                    <tr>
+                      <td align="left" style="vertical-align:middle;">{brand}</td>
+                      <td align="right" style="vertical-align:middle;">
+                        <span style="font-family:{_SANS};font-size:9px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.55);">{tag}</span>
+                      </td>
+                    </tr>
+                  </table>
+                  <div style="font-size:0;line-height:0;height:88px;">&nbsp;</div>
+                  <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:{_C_GOLD};margin:0 0 8px;">World Trade Center &middot; Abuja</p>
+                  <p style="font-family:{_SERIF};font-size:27px;font-weight:400;color:#ffffff;line-height:1.15;margin:0;">{heading_html}</p>
+                </td>
+              </tr>
+            </table>"""
+    if not hero_url:
+        return (
+            f'        <tr>\n          <td bgcolor="{_C_HERO_BG}" '
+            f'style="background:{_C_HERO_BG};border-radius:4px 4px 0 0;">\n'
+            f"{inner}\n          </td>\n        </tr>"
+        )
+    return f"""\
+        <tr>
+          <td background="{hero_url}" bgcolor="{_C_HERO_BG}" valign="bottom" style="background-color:{_C_HERO_BG};background-image:url('{hero_url}');background-position:center;background-size:cover;border-radius:4px 4px 0 0;">
+            <!--[if gte mso 9]>
+            <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:300px;">
+            <v:fill type="frame" src="{hero_url}" color="{_C_HERO_BG}" />
+            <v:textbox inset="0,0,0,0">
+            <![endif]-->
+{inner}
+            <!--[if gte mso 9]>
+            </v:textbox>
+            </v:rect>
+            <![endif]-->
+          </td>
+        </tr>"""
+
+
+def _c_footer(contact_lead_in: str, footer_note_html: str) -> str:
+    return f"""\
+        <tr>
+          <td style="background:{_C_STRIP};padding:24px 48px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <p style="font-family:{_SANS};font-size:11px;color:#8f8f8b;margin:0 0 4px;">{contact_lead_in}</p>
+                  <a href="mailto:enquiries@wtcabuja.com" style="font-family:{_SANS};font-size:12px;color:{_C_GOLD};font-weight:600;text-decoration:none;">enquiries@wtcabuja.com</a>
+                </td>
+                <td align="right" style="vertical-align:middle;">
+                  <span style="font-family:{_SANS};font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:#5c5c58;">wtcabuja.com</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:{_C_FOOT};padding:20px 48px;border-radius:0 0 4px 4px;">
+            <p style="font-family:{_SANS};font-size:9px;color:#4a4a46;line-height:1.7;margin:0;">{footer_note_html}</p>
+          </td>
+        </tr>"""
+
+
+def _c_shell(*, tag: str, heading_html: str, body_html: str, contact_lead_in: str,
+             footer_note_html: str, hero_url: str, logo_url: str) -> str:
+    """Wrap the header + body + footer in the cream outer shell."""
+    return f"""\
+<body style="margin:0;padding:0;background:{_C_CREAM};">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:{_C_CREAM};">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" role="presentation" style="max-width:600px;width:100%;">
+{_c_header(tag, heading_html, hero_url, logo_url)}
+          <tr>
+            <td style="background:#ffffff;padding:40px 48px 36px;">
+{body_html}
+            </td>
+          </tr>
+{_c_footer(contact_lead_in, footer_note_html)}
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>"""
+
+
+def _greeting(lead: Lead) -> str:
+    return f"Hello {lead.first_name}," if lead.first_name else "Hello,"
+
+
 # ── Digital-pack delivery email (to lead) ─────────────────────────────────────
 
 
@@ -301,107 +447,231 @@ def build_pack_email(
 ) -> tuple[str, str, str]:
     """(subject, html, text) for the digital-pack email sent to the visitor.
 
-    Overridable via config["digital_pack"] = {
-        "subject": ..., "intro": ..., "logo_url": ...,
-        "contact_email": ..., "contact_phone": ...,
-    }
+    Dynamic: one download row per requested material that has a configured asset
+    (`materials`, from pack_delivery.deliverable_materials). Copy is source-aware
+    via config["digital_pack"]:
+        subject, intro, event_line (footer; NOG only), hero_url, logo_url
+    and each row's label/blurb via config["materials_display"][label] =
+        {eyebrow, title, description, featured}.
     """
-    pack_cfg = (campaign.config or {}).get("digital_pack", {})
-    event_name = campaign.name
-    subject = pack_cfg.get("subject", f"Your {event_name} digital pack")
+    config = campaign.config or {}
+    pack_cfg = config.get("digital_pack", {})
+    display: dict = config.get("materials_display", {})
+    subject = pack_cfg.get("subject", "Your WTC Abuja Digital Pack")
     intro = pack_cfg.get(
         "intro",
-        "Thank you for visiting us. Your requested materials are ready to download.",
+        "Thank you for your interest in World Trade Center Abuja. As requested, "
+        "your materials are below — tap any button to download.",
     )
-    logo_url = pack_cfg.get("logo_url")
-    contact_email = pack_cfg.get("contact_email")
-    contact_phone = pack_cfg.get("contact_phone")
-    greeting = f"Hello {lead.first_name}," if lead.first_name else "Hello,"
-    captured_at = (
-        lead.captured_at.astimezone(UTC).strftime("%-d %B %Y")
-        if lead.captured_at
-        else datetime.now(UTC).strftime("%-d %B %Y")
-    )
+    event_line = pack_cfg.get("event_line", "")
+    hero_url = pack_cfg.get("hero_url", "")
+    logo_url = pack_cfg.get("logo_url", "")
+    greeting = _greeting(lead)
 
-    def _file_label(index: int, total: int) -> str:
-        return f"Download {index + 1}" if total > 1 else "Download"
+    def _btn_label(i: int, total: int) -> str:
+        return f"Download {i + 1}" if total > 1 else "Download"
 
-    # ── plain text ─────────────────────────────────────────────────────────────
+    # ── plain text ───────────────────────────────────────────────────────────
     text_lines = [greeting, "", intro, ""]
     for label, urls in materials:
-        text_lines.append(f"{label}:")
+        meta = display.get(label, {})
+        text_lines.append(meta.get("title", label) + ":")
         for i, url in enumerate(urls):
-            text_lines.append(f"  {_file_label(i, len(urls))}: {url}")
+            text_lines.append(f"  {_btn_label(i, len(urls))}: {url}")
         text_lines.append("")
-    if contact_email or contact_phone:
-        text_lines.append("Questions? We're happy to help.")
-        if contact_email:
-            text_lines.append(f"Email: {contact_email}")
-        if contact_phone:
-            text_lines.append(f"Phone: {contact_phone}")
+    text_lines.append("Questions? enquiries@wtcabuja.com")
     text = "\n".join(text_lines).rstrip() + "\n"
 
-    # ── HTML ───────────────────────────────────────────────────────────────────
-    _btn = (
-        f"display:inline-block;background:{_GOLD};color:#15181e;text-decoration:none;"
-        "font-weight:700;font-size:13px;padding:10px 18px;border-radius:8px;"
-        "margin:6px 8px 0 0;letter-spacing:0.02em"
-    )
-
-    logo_block = (
-        f'<div style="text-align:center;margin-bottom:8px">'
-        f'<img src="{logo_url}" alt="{event_name}" style="max-width:180px;height:auto"/>'
-        f"</div>"
-        if logo_url
-        else ""
-    )
-
-    material_cards = "\n".join(
-        f"""\
-          <div style="background:#1a1c22;border-radius:10px;padding:18px 20px;margin-bottom:12px">
-            <div style="color:{_WHITE};font-size:15px;font-weight:700;margin-bottom:10px">{label}</div>
-            {"".join(
-                f'<a href="{url}" style="{_btn}">{_file_label(i, len(urls))}</a>'
-                for i, url in enumerate(urls)
-            )}
-          </div>"""
-        for label, urls in materials
-    )
-
-    if contact_email or contact_phone:
-        contact_parts = []
-        if contact_email:
-            contact_parts.append(
-                f'<a href="mailto:{contact_email}" style="color:{_GOLD};text-decoration:none">'
-                f"{contact_email}</a>"
-            )
-        if contact_phone:
-            contact_parts.append(contact_phone)
-        contact_block = (
-            f'<div style="color:{_MUTED};font-size:13px;margin-top:24px">'
-            f"Questions? We're happy to help &mdash; "
-            + " &middot; ".join(contact_parts)
-            + "</div>"
+    # ── HTML rows ────────────────────────────────────────────────────────────
+    rows = []
+    for label, urls in materials:
+        meta = display.get(label, {})
+        eyebrow = meta.get("eyebrow", "Document")
+        title = meta.get("title", label)
+        description = meta.get("description", "")
+        featured = bool(meta.get("featured"))
+        buttons = "".join(
+            _c_button(u, _btn_label(i, len(urls)), gold=featured)
+            for i, u in enumerate(urls)
         )
-    else:
-        contact_block = ""
+        desc_html = (
+            f'<p style="font-family:{_SANS};font-size:11px;color:{_C_MUTED};'
+            f'margin:4px 0 0;line-height:1.5;">{description}</p>'
+            if description
+            else ""
+        )
+        inner = f"""\
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+                      <tr>
+                        <td style="vertical-align:middle;">
+                          <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 4px;">{eyebrow}</p>
+                          <p style="font-family:{_SERIF};font-size:16px;color:{_C_INK};margin:0;">{title}</p>
+                          {desc_html}
+                        </td>
+                        <td align="right" style="vertical-align:middle;padding-left:16px;">{buttons}</td>
+                      </tr>
+                    </table>"""
+        if featured:
+            rows.append(
+                f'<tr><td style="border-top:1px solid {_C_LINE};padding-top:22px;">'
+                f'<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">'
+                f'<tr><td style="background:{_C_PANEL};border-radius:3px;padding:20px 22px;">'
+                f"{inner}</td></tr></table></td></tr>"
+            )
+        else:
+            rows.append(
+                f'<tr><td style="border-top:1px solid {_C_LINE};padding:22px 0 20px;">'
+                f"{inner}</td></tr>"
+            )
+    rows_html = "\n".join(rows)
 
-    body = f"""\
-{_wtc_header(subject)}
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:32px 40px">
-          {logo_block}
-          <div style="color:{_MUTED};font-size:15px;margin-bottom:6px">{greeting}</div>
-          <div style="color:{_MUTED};font-size:14px;margin-bottom:24px">{intro}</div>
-          {_label("YOUR MATERIALS")}
-{material_cards}
-          {contact_block}
-          <div style="color:{_DIM};font-size:12px;margin-top:24px">
-            If a download link doesn't open, reply to this email and we'll help.
-          </div>
-        </td></tr>
-      </table>
-{_wtc_footer(campaign.name, captured_at)}"""
+    body_html = f"""\
+              <p style="font-family:{_SANS};font-size:15px;color:{_C_INK};line-height:1.6;margin:0 0 8px;">{greeting}</p>
+              <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:0 0 32px;">{intro}</p>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+{rows_html}
+              </table>"""
 
-    html = _wrap(body)
+    footer_bits = []
+    if event_line:
+        footer_bits.append(f"Captured via WTC Abuja Concierge App &nbsp;&middot;&nbsp; {event_line}")
+    footer_bits.append("World Trade Center Abuja &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria")
+    footer_bits.append("If a download link doesn't open, reply to this email and we'll assist.")
+    footer_note = "<br>".join(footer_bits)
+
+    html = "<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\">" + _c_shell(
+        tag="Digital Pack",
+        heading_html="Your materials<br>are ready.",
+        body_html=body_html,
+        contact_lead_in="Questions? We're here.",
+        footer_note_html=footer_note,
+        hero_url=hero_url,
+        logo_url=logo_url,
+    ) + "</html>"
     return subject, html, text
+
+
+# ── Viewing-request confirmation email (to lead) ──────────────────────────────
+
+
+_VIEWING_STEPS = [
+    ("Confirmation call",
+     "Our team will contact you to confirm a convenient date and time for your private viewing."),
+    ("Private tour",
+     "A dedicated host will walk you through the offices, residences, and clubhouse — tailored to your interests."),
+    ("Tailored proposal",
+     "Following your visit, we'll prepare a proposal specific to your requirements — whether office, residence, or both."),
+]
+
+
+def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, str, str]:
+    """(subject, html, text) confirming a viewing/inspection request to the visitor.
+
+    Copy via config["viewing_booking"] = {subject, intro, brochure_url} and the
+    shared config["digital_pack"] hero_url/logo_url. The brochure CTA renders only
+    when brochure_url is set.
+    """
+    config = campaign.config or {}
+    view_cfg = config.get("viewing_booking", {})
+    pack_cfg = config.get("digital_pack", {})
+    subject = view_cfg.get("subject", "Your WTC Abuja Viewing Request")
+    intro = view_cfg.get(
+        "intro",
+        "Thank you for requesting a viewing at World Trade Center Abuja. A member "
+        "of our team will be in touch with you shortly to confirm the details and "
+        "arrange a time that works for you.",
+    )
+    brochure_url = view_cfg.get("brochure_url", "")
+    hero_url = pack_cfg.get("hero_url", "")
+    logo_url = pack_cfg.get("logo_url", "")
+    greeting = _greeting(lead)
+
+    # ── plain text ───────────────────────────────────────────────────────────
+    text_lines = [greeting, "", intro, "", "Your viewing experience:"]
+    for i, (title, desc) in enumerate(_VIEWING_STEPS, 1):
+        text_lines.append(f"  {i}. {title} — {desc}")
+    if brochure_url:
+        text_lines += ["", f"Download the full brochure: {brochure_url}"]
+    text_lines += ["", "Questions? enquiries@wtcabuja.com"]
+    text = "\n".join(text_lines) + "\n"
+
+    # ── HTML steps ───────────────────────────────────────────────────────────
+    steps = []
+    for i, (title, desc) in enumerate(_VIEWING_STEPS, 1):
+        steps.append(f"""\
+                  <tr>
+                    <td style="vertical-align:top;width:34px;padding:0 0 16px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                        <td width="22" height="22" align="center" bgcolor="{_C_INK}" style="border-radius:11px;font-family:{_SERIF};font-size:11px;color:{_C_GOLD};line-height:22px;">{i}</td>
+                      </tr></table>
+                    </td>
+                    <td style="vertical-align:top;padding:0 0 16px 4px;">
+                      <p style="font-family:{_SANS};font-size:12px;font-weight:700;color:{_C_INK};margin:0 0 3px;">{title}</p>
+                      <p style="font-family:{_SANS};font-size:12px;color:{_C_MUTED};line-height:1.5;margin:0;">{desc}</p>
+                    </td>
+                  </tr>""")
+    steps_html = "\n".join(steps)
+
+    brochure_block = ""
+    if brochure_url:
+        brochure_block = f"""\
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:8px;">
+                <tr>
+                  <td style="background:{_C_PANEL};border-radius:3px;padding:22px 24px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+                      <tr>
+                        <td style="vertical-align:middle;">
+                          <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 5px;">Prepare for your visit</p>
+                          <p style="font-family:{_SERIF};font-size:15px;color:{_C_INK};margin:0 0 4px;">Download the full brochure</p>
+                          <p style="font-family:{_SANS};font-size:11px;color:{_C_MUTED};line-height:1.5;margin:0;">Offices, residences, clubhouse and infrastructure — everything in one document.</p>
+                        </td>
+                        <td align="right" style="vertical-align:middle;padding-left:16px;">{_c_button(brochure_url, "Download")}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>"""
+
+    body_html = f"""\
+              <p style="font-family:{_SANS};font-size:15px;color:{_C_INK};line-height:1.6;margin:0 0 8px;">{greeting}</p>
+              <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:0 0 32px;">{intro}</p>
+              <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 18px;padding-top:22px;border-top:1px solid {_C_LINE};">Your viewing experience</p>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:24px;">
+{steps_html}
+              </table>
+{brochure_block}"""
+
+    footer_note = (
+        "You are receiving this because you requested a viewing at wtcabuja.com.<br>"
+        "World Trade Center Abuja &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
+    )
+    html = "<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\">" + _c_shell(
+        tag="Viewing Request",
+        heading_html="Your viewing request<br>has been received.",
+        body_html=body_html,
+        contact_lead_in="Can't wait? Reach us directly.",
+        footer_note_html=footer_note,
+        hero_url=hero_url,
+        logo_url=logo_url,
+    ) + "</html>"
+    return subject, html, text
+
+
+async def send_viewing_booking(
+    lead: Lead, campaign: Campaign, settings: Settings | None = None
+) -> bool:
+    """Best-effort viewing-confirmation email to the visitor. Never raises."""
+    settings = settings or get_settings()
+    try:
+        subject, html, text = build_viewing_booking_email(lead, campaign)
+        return await send_campaign_email(
+            to_email=lead.email,
+            subject=subject,
+            html=html,
+            text=text,
+            settings=settings,
+            cc=[settings.campaign_cc_email] if settings.campaign_cc_email else None,
+        )
+    except Exception:
+        logger.exception("viewing booking email failed", lead_id=lead.id)
+        return False

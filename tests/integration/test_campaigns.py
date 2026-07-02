@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints import campaigns as campaigns_api
 from app.core.config import Settings
 from app.models.campaign import STATUS_ACTIVE, STATUS_DRAFT, Campaign
-from app.models.lead import CRM_FAILED, CRM_PENDING, CRM_SKIPPED, CRM_SYNCED
+from app.models.lead import CRM_FAILED, CRM_PENDING, CRM_SKIPPED, CRM_SYNCED, Lead
 from app.repositories import campaigns_repo, leads_repo
 from app.schemas.campaigns import CampaignCreateRequest, LeadCreateRequest
 from app.services import lead_crm_sync, lead_export, lead_service
@@ -450,19 +450,21 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
     assert "Download 2" in sent["html"]
 
 
-async def test_deliver_pack_includes_contact_info_when_configured(
+async def test_pack_email_is_source_aware_and_uses_display_meta(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Contact email/phone are optional, set later via campaign config — when
-    present they must show up; when absent (today's reality) no broken/empty
-    'Questions?' section should render."""
+    """Pack email renders per-material display titles, always carries the enquiries
+    contact, and only shows the event line when the campaign config sets one."""
     from app.services import pack_delivery
 
     campaign = await _make_campaign(db_session)
-    lead_no_contact = await lead_service.capture_lead(
-        db_session, "nog-2026",
-        _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
-    )
+    campaign.config = {
+        **campaign.config,
+        "digital_pack": {"event_line": "NOG Energy Week 2026 &middot; 5–9 July 2026"},
+        "materials_display": {
+            "Corporate Prospectus": {"title": "Full Development Brochure", "featured": True},
+        },
+    }
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
@@ -473,23 +475,81 @@ async def test_deliver_pack_includes_contact_info_when_configured(
     enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
     monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
 
-    await pack_delivery.deliver_pack(db_session, lead_no_contact, campaign, settings=enabled)
-    assert "Questions?" not in _fake_send.last["html"]
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="a@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+    await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    html = _fake_send.last["html"]
+    assert "Full Development Brochure" in html  # display title, not the raw label
+    assert "enquiries@wtcabuja.com" in html  # fixed contact strip
+    assert "NOG Energy Week 2026" in html  # event line present when configured
+    # No forbidden CSS that email clients strip.
+    for bad in ("position:absolute", "display:flex", "object-fit", "linear-gradient"):
+        assert bad not in html
 
-    campaign.config = {
-        **campaign.config,
-        "digital_pack": {
-            "contact_email": "events@wtcabuja.com",
-            "contact_phone": "+234 800 000 0000",
-        },
-    }
-    lead_with_contact = await lead_service.capture_lead(
+    # A campaign without an event_line omits it.
+    campaign.config = {**campaign.config, "digital_pack": {}}
+    lead2 = await lead_service.capture_lead(
         db_session, "nog-2026",
         _lead(email="b@example.com", requested_materials=["Corporate Prospectus"]),
     )
-    await pack_delivery.deliver_pack(db_session, lead_with_contact, campaign, settings=enabled)
-    assert "events@wtcabuja.com" in _fake_send.last["html"]
-    assert "+234 800 000 0000" in _fake_send.last["html"]
+    await pack_delivery.deliver_pack(db_session, lead2, campaign, settings=enabled)
+    assert "NOG Energy Week 2026" not in _fake_send.last["html"]
+
+
+async def test_build_viewing_booking_email() -> None:
+    """The viewing-confirmation email greets by name, links the brochure when
+    configured, and stays email-client-safe."""
+    from app.services import campaign_mailer
+
+    campaign = Campaign(
+        slug="nog-2026", name="Test Event", status=STATUS_ACTIVE,
+        config={
+            "viewing_booking": {"brochure_url": "https://assets.example.com/brochure.pdf"},
+            "digital_pack": {"hero_url": "https://h/hero.jpg", "logo_url": "https://l/logo.png"},
+        },
+    )
+    lead = Lead(campaign_id=1, email="v@example.com", first_name="Ada", last_name="L",
+                phone="+234", company="Energy Co", inspection_requested=True)
+    subject, html, text = campaign_mailer.build_viewing_booking_email(lead, campaign)
+    assert "Viewing Request" in subject
+    assert "Hello Ada," in html and "Hello Ada," in text
+    assert "https://assets.example.com/brochure.pdf" in html
+    assert "https://h/hero.jpg" in html and "https://l/logo.png" in html
+    for bad in ("position:absolute", "display:flex", "object-fit", "linear-gradient"):
+        assert bad not in html
+
+
+async def test_capture_with_inspection_sends_viewing_email(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lead flagged inspection_requested triggers the viewing-confirmation email
+    over the capture endpoint; a pack-only lead does not."""
+    from app.api.v1.endpoints import campaigns as campaigns_api
+
+    await _make_campaign(db_session)
+    sent: list = []
+
+    async def _fake_view(lead, campaign, settings=None):
+        sent.append(lead.email)
+        return True
+
+    async def _noop_notify(lead, campaign, settings=None):
+        return None
+
+    monkeypatch.setattr(campaigns_api.campaign_mailer, "send_viewing_booking", _fake_view)
+    monkeypatch.setattr(campaigns_api.campaign_mailer, "send_lead_notification", _noop_notify)
+
+    await campaigns_api.capture_lead(
+        "nog-2026", _lead(email="viewer@example.com", inspection_requested=True), db_session
+    )
+    assert sent == ["viewer@example.com"]
+
+    await campaigns_api.capture_lead(
+        "nog-2026", _lead(email="packer@example.com", inspection_requested=False), db_session
+    )
+    assert sent == ["viewer@example.com"]  # unchanged — no viewing email for pack-only
 
 
 async def test_deliver_pack_includes_logo_when_configured(

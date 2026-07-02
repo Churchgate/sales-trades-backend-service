@@ -136,6 +136,8 @@ async def capture_lead(
     if campaign is not None:
         if lead.pack_delivery_status == PACK_PENDING:
             lead = await pack_delivery.deliver_pack(session, lead, campaign)
+        if lead.inspection_requested:
+            await campaign_mailer.send_viewing_booking(lead, campaign)
         await campaign_mailer.send_lead_notification(lead, campaign)
 
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
