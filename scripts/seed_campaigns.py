@@ -20,6 +20,14 @@ from sqlalchemy import select
 from app.core.database import session_scope
 from app.models.campaign import STATUS_ACTIVE, Campaign
 
+# Shared transactional-email assets (Supabase campaign-assets bucket). The hero is
+# pre-darkened and the logo pre-whitened so white overlay text is legible in every
+# client (email clients strip CSS scrims / invert filters) — see campaign_mailer.
+_A = "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets"
+_EMAIL_HERO = f"{_A}/wtc-bg-hero.jpg"
+_EMAIL_LOGO = f"{_A}/Abuja_WTC-LOGO_HORZ-white.png"
+_BROCHURE_URL = f"{_A}/WTC-Abuja-Brochure.pdf"
+
 # WTC Abuja Interactive Stand App (boot-app brief). Interests/materials/tags map
 # to brief §12 (routes), §18 (conversion surface), §19 (timing), §20 (consent),
 # §22 (CRM tags).
@@ -47,19 +55,16 @@ _NOG_2026_CONFIG: dict = {
     # Keyed by the exact `materials` labels above; a label with no entry is
     # captured/tagged but not emailed until one is added here.
     #
-    # Hosted in Supabase Storage, bucket `campaign-assets` (public). Still
-    # missing real files for Corporate Prospectus, Clubhouse Overview — add
-    # their entries here as those land from other departments, then re-run
-    # this script.
+    # Hosted in Supabase Storage, bucket `campaign-assets` (public). Uses the same
+    # single combined "…-Email.pdf" documents as the website (the earlier per-image
+    # PNG/WEBP floorplate/floorplan files 400 now). Clubhouse Overview has no file.
     "materials_assets": {
+        "Corporate Prospectus": [_BROCHURE_URL],
         "Office Floorplates": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate2.webp",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Office-Floorplate-Email.pdf",
         ],
         "Residence Floorplans": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-1br.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-2br.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-3br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Residential-Floorplans-Email.pdf",
         ],
         "Location Overview": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/location_overview.png",
@@ -68,19 +73,57 @@ _NOG_2026_CONFIG: dict = {
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
         ],
     },
-    # Optional copy override for the digital-pack email (defaults live in the service).
-    # contact_email/contact_phone still pending from the team — add once available,
-    # no redeploy needed (services/pack_delivery.py renders them conditionally).
+    # Digital-pack + viewing-confirmation email copy/branding (services/campaign_mailer).
+    # event_line is NOG-only — website leads omit it (source-aware footer).
     "digital_pack": {
-        "subject": "Your WTC Abuja digital pack",
+        "subject": "Your WTC Abuja Digital Pack",
         "intro": (
-            "Thank you for visiting the World Trade Center Abuja stand. As "
-            "requested, here are your materials to download:"
+            "Thank you for visiting the World Trade Center Abuja stand at NOG "
+            "Energy Week. As requested, your materials are below — tap any button "
+            "to download."
         ),
-        "logo_url": (
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
-            "campaign-assets/wtc-logo.png"
+        "event_line": "NOG Energy Week 2026 &middot; 5–9 July 2026",
+        "hero_url": _EMAIL_HERO,
+        "logo_url": _EMAIL_LOGO,
+    },
+    "viewing_booking": {
+        "subject": "Your WTC Abuja Viewing Request",
+        "intro": (
+            "Thank you for requesting a viewing at the World Trade Center Abuja "
+            "stand. A member of our team will be in touch shortly to confirm the "
+            "details and arrange a time that works for you."
         ),
+        "brochure_url": _BROCHURE_URL,
+    },
+    # Per-material display copy for the pack email's download rows (keyed by the
+    # `materials` labels above). `featured` renders the highlighted panel style.
+    "materials_display": {
+        "Corporate Prospectus": {
+            "eyebrow": "Full Brochure",
+            "title": "Full Development Brochure",
+            "description": "Offices, residences, clubhouse and infrastructure.",
+            "featured": True,
+        },
+        "Office Floorplates": {
+            "eyebrow": "Office Floorplate",
+            "title": "Grade A Offices",
+            "description": "1,440 m² typical floor · Shell & core to Cat B fit-out",
+        },
+        "Residence Floorplans": {
+            "eyebrow": "Residence Floorplans",
+            "title": "Executive Residences",
+            "description": "1-bed, 2-bed & 3-bed apartments · Penthouses on request",
+        },
+        "Security & Continuity Brief": {
+            "eyebrow": "Security & Continuity",
+            "title": "Security & Continuity Brief",
+            "description": "Perimeter, access control and business-continuity overview.",
+        },
+        "Location Overview": {
+            "eyebrow": "Location",
+            "title": "Location Overview",
+            "description": "Central Business District, Abuja.",
+        },
     },
     "consent": {
         "required": (
@@ -133,14 +176,13 @@ _WTC_WEBSITE_CONFIG: dict = {
         "brochure": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Brochure.pdf",
         ],
+        # Website uses the single combined "…-Email.pdf" documents (one clean
+        # download per row), not the stand app's multi-image sets.
         "office_floorplans": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate2.webp",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Office-Floorplate-Email.pdf",
         ],
         "residential_plans": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-1br.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-2br.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-3br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Residential-Floorplans-Email.pdf",
         ],
         "infrastructure_specs": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
@@ -163,6 +205,50 @@ _WTC_WEBSITE_CONFIG: dict = {
         "full": "Full Development Tour",
         "investment": "Investment / Purchase",
         "general": "General Information",
+    },
+    # Source-aware email copy: website leads didn't visit a stand, so the intro is
+    # neutral and the NOG event_line is dropped (inherited digital_pack replaced).
+    "digital_pack": {
+        "subject": "Your WTC Abuja Digital Pack",
+        "intro": (
+            "Thank you for your interest in World Trade Center Abuja. As requested, "
+            "your materials are below — tap any button to download."
+        ),
+        "hero_url": _EMAIL_HERO,
+        "logo_url": _EMAIL_LOGO,
+    },
+    "viewing_booking": {
+        "subject": "Your WTC Abuja Viewing Request",
+        "intro": (
+            "Thank you for requesting a viewing at World Trade Center Abuja. A "
+            "member of our team will be in touch shortly to confirm the details "
+            "and arrange a time that works for you."
+        ),
+        "brochure_url": _BROCHURE_URL,
+    },
+    # Keyed by the website's material slugs (see `materials` above).
+    "materials_display": {
+        "brochure": {
+            "eyebrow": "Full Brochure",
+            "title": "Full Development Brochure",
+            "description": "Offices, residences, clubhouse and infrastructure.",
+            "featured": True,
+        },
+        "office_floorplans": {
+            "eyebrow": "Office Floorplate",
+            "title": "Grade A Offices",
+            "description": "1,440 m² typical floor · Shell & core to Cat B fit-out",
+        },
+        "residential_plans": {
+            "eyebrow": "Residence Floorplans",
+            "title": "Executive Residences",
+            "description": "1-bed, 2-bed & 3-bed apartments · Penthouses on request",
+        },
+        "infrastructure_specs": {
+            "eyebrow": "Security & Continuity",
+            "title": "Security & Continuity Brief",
+            "description": "Perimeter, access control and business-continuity overview.",
+        },
     },
 }
 
