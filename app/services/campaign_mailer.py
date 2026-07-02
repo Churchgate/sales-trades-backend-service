@@ -399,7 +399,7 @@ def _c_footer(contact_lead_in: str, footer_note_html: str) -> str:
                   <a href="mailto:enquiries@wtcabuja.com" style="font-family:{_SANS};font-size:12px;color:{_C_GOLD};font-weight:600;text-decoration:none;">enquiries@wtcabuja.com</a>
                 </td>
                 <td align="right" style="vertical-align:middle;">
-                  <span style="font-family:{_SANS};font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:#5c5c58;">wtcabuja.com</span>
+                  <a href="https://wtcabuja.com" style="font-family:{_SANS};font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:{_C_GOLD};text-decoration:none;">wtcabuja.com</a>
                 </td>
               </tr>
             </table>
@@ -641,8 +641,12 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
               </table>
 {brochure_block}"""
 
+    _domain = (
+        f'<a href="https://wtcabuja.com" style="color:{_C_GOLD};text-decoration:none;">'
+        f"wtcabuja.com</a>"
+    )
     footer_note = (
-        "You are receiving this because you requested a viewing at wtcabuja.com.<br>"
+        f"You are receiving this because you requested a viewing at {_domain}.<br>"
         "World Trade Center Abuja &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
     )
     html = "<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\">" + _c_shell(

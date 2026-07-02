@@ -55,19 +55,16 @@ _NOG_2026_CONFIG: dict = {
     # Keyed by the exact `materials` labels above; a label with no entry is
     # captured/tagged but not emailed until one is added here.
     #
-    # Hosted in Supabase Storage, bucket `campaign-assets` (public). Still
-    # missing real files for Corporate Prospectus, Clubhouse Overview — add
-    # their entries here as those land from other departments, then re-run
-    # this script.
+    # Hosted in Supabase Storage, bucket `campaign-assets` (public). Uses the same
+    # single combined "…-Email.pdf" documents as the website (the earlier per-image
+    # PNG/WEBP floorplate/floorplan files 400 now). Clubhouse Overview has no file.
     "materials_assets": {
+        "Corporate Prospectus": [_BROCHURE_URL],
         "Office Floorplates": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate2.webp",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Office-Floorplate-Email.pdf",
         ],
         "Residence Floorplans": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-1br.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-2br.png",
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-3br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Residential-Floorplans-Email.pdf",
         ],
         "Location Overview": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/location_overview.png",
