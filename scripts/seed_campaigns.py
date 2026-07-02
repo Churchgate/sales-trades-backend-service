@@ -107,6 +107,44 @@ _NOG_2026_CONFIG: dict = {
     "newsletter_tag": "Newsletter Opt-In",
 }
 
+# WTC Abuja public website (https://wtcabuja.com) enquiry form. Same event shape
+# as the stand app, but the website form submits machine slugs for its materials
+# (brochure, office_floorplans, …) rather than the human labels the stand app
+# uses — so this campaign's `materials`/`materials_assets` are keyed by those
+# slugs, or nothing would be deliverable (deliverable_materials matches labels
+# exactly). brochure + availability are known materials with no asset yet: leads
+# requesting only those are captured/tagged but not emailed until a file is added
+# here (then a resend/retry delivers). The three below deliver today.
+#
+# NOTE: the website also submits interest slugs (e.g. "residences"), so `interests`
+# and `tag_map` here don't yet match what it sends — tags fall through as the raw
+# slug. Left as-is pending the full list of the website's interest values; not a
+# delivery blocker.
+_WTC_WEBSITE_CONFIG: dict = {
+    **_NOG_2026_CONFIG,
+    "materials": [
+        "brochure",
+        "office_floorplans",
+        "residential_plans",
+        "infrastructure_specs",
+        "availability",
+    ],
+    "materials_assets": {
+        "office_floorplans": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate2.webp",
+        ],
+        "residential_plans": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-1br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-2br.png",
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/residences-3br.png",
+        ],
+        "infrastructure_specs": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
+        ],
+    },
+}
+
 CAMPAIGNS: list[dict] = [
     {
         "slug": "nog-2026",
@@ -116,6 +154,15 @@ CAMPAIGNS: list[dict] = [
         "ends_on": date(2026, 7, 9),
         "timezone": "Africa/Lagos",
         "config": _NOG_2026_CONFIG,
+    },
+    {
+        "slug": "wtcabuja-website",
+        "name": "WTC Abuja Website",
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 7, 5),
+        "ends_on": date(2056, 7, 9),  # "always on" — the public site has no end date
+        "timezone": "Africa/Lagos",
+        "config": _WTC_WEBSITE_CONFIG,
     },
 ]
 
