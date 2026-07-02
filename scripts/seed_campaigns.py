@@ -112,9 +112,9 @@ _NOG_2026_CONFIG: dict = {
 # (brochure, office_floorplans, …) rather than the human labels the stand app
 # uses — so this campaign's `materials`/`materials_assets` are keyed by those
 # slugs, or nothing would be deliverable (deliverable_materials matches labels
-# exactly). brochure + availability are known materials with no asset yet: leads
-# requesting only those are captured/tagged but not emailed until a file is added
-# here (then a resend/retry delivers). The three below deliver today.
+# exactly). `availability` is a known material with no asset yet: leads requesting
+# only it are captured/tagged but not emailed until a file is added here (then a
+# resend/retry delivers). The other four deliver today.
 #
 # The website also submits interest slugs (offices/residences/both/security/full/
 # investment/general) — mapped to CRM tags via the tag_map override below. The
@@ -130,6 +130,9 @@ _WTC_WEBSITE_CONFIG: dict = {
         "availability",
     ],
     "materials_assets": {
+        "brochure": [
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Brochure.pdf",
+        ],
         "office_floorplans": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate1.png",
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/corporate-office_floorplate2.webp",
