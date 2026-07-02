@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # design). Distinct from dashboard_frontend_base_url, which is the
     # admin-only campaign/leads management UI.
     kiosk_frontend_base_url: str = "http://localhost:3003"
+    # Any further CORS origins beyond the fixed ones above (e.g. the public
+    # wtcabuja.com marketing site embedding the kiosk form) — comma-separated,
+    # no redeploy-worthy code change needed to add one. Empty by default.
+    extra_cors_origins: str = ""
     # Live Freshsales contact write-sync. Off by default so an event can run
     # CSV-first (the guaranteed path) and flip this on once verified live.
     freshsales_lead_sync_enabled: bool = False
@@ -117,6 +121,17 @@ class Settings(BaseSettings):
     @property
     def deal_view_ids(self) -> list[int]:
         return [int(v) for v in self.freshsales_deal_view_ids.split(",") if v.strip()]
+
+    @property
+    def cors_origins(self) -> list[str]:
+        fixed = [
+            self.frontend_base_url,
+            self.booking_frontend_base_url,
+            self.dashboard_frontend_base_url,
+            self.kiosk_frontend_base_url,
+        ]
+        extra = [v.strip() for v in self.extra_cors_origins.split(",") if v.strip()]
+        return fixed + extra
 
     @property
     def agent_allowed_pipelines(self) -> set[int]:
