@@ -401,7 +401,7 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     sent: dict = {}
 
     async def _fake_send(
-        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
     ):
         sent.update(to_email=to_email, subject=subject, html=html, text=text,
                      from_email=from_email, from_name=from_name)
@@ -433,7 +433,7 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
     sent: dict = {}
 
     async def _fake_send(
-        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
     ):
         sent.update(html=html, text=text)
         return True
@@ -465,7 +465,7 @@ async def test_deliver_pack_includes_contact_info_when_configured(
     )
 
     async def _fake_send(
-        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
     ):
         _fake_send.last = {"html": html, "text": text}
         return True
@@ -506,7 +506,7 @@ async def test_deliver_pack_includes_logo_when_configured(
     )
 
     async def _fake_send(
-        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
     ):
         _fake_send.last = {"html": html, "text": text}
         return True
@@ -575,7 +575,7 @@ async def test_deliver_pending_picks_up_pending_packs(
     monkeypatch.setattr(pack_delivery, "get_settings", lambda: enabled)
 
     async def _fake_send(
-        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None,
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
     ):
         return True
 
@@ -689,3 +689,150 @@ async def test_sync_pending_pushes_pending_leads(
         )
         synced = await lead_crm_sync.sync_pending(db_session)
     assert synced == 2
+
+
+async def test_deliver_pack_ccs_configured_address(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When campaign_cc_email is set, the pack email CCs it (audit copy); when the
+    CC equals the recipient it's dropped (SendGrid rejects a duplicate)."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="visitor@example.com", requested_materials=["Corporate Prospectus"]),
+    )
+
+    seen: dict = {}
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+    ):
+        seen["cc"] = cc
+        return True
+
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+
+    enabled = Settings(
+        wtc_sendgrid_api_key="SG.wtc.test", campaign_cc_email="enquiries@wtcabuja.com"
+    )
+    await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    assert seen["cc"] == ["enquiries@wtcabuja.com"]
+
+    no_cc = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    await pack_delivery.deliver_pack(db_session, lead, campaign, settings=no_cc)
+    assert seen["cc"] is None
+
+
+async def test_send_campaign_email_drops_cc_that_equals_recipient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A CC duplicating the To address is stripped from the SendGrid payload."""
+    from app.services import campaign_mailer
+
+    captured: dict = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None:  # noqa: D401
+            return None
+
+    class _Client:
+        def __init__(self, *a, **k) -> None: ...
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a) -> None:
+            return None
+        async def post(self, url, json=None, headers=None):
+            captured["json"] = json
+            return _Resp()
+
+    monkeypatch.setattr(campaign_mailer.httpx, "AsyncClient", _Client)
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test", event_mail_from_email="from@wtc.com")
+
+    ok = await campaign_mailer.send_campaign_email(
+        to_email="dup@example.com", subject="s", html="<p>h</p>", text="t",
+        settings=enabled, cc=["DUP@example.com"],
+    )
+    assert ok is True
+    assert "cc" not in captured["json"]["personalizations"][0]
+
+
+async def test_resend_lead_pack_redelivers_over_http(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-lead resend endpoint re-attempts delivery and is allowed for admin
+    (not only superadmin)."""
+    from app.api.dependencies import get_current_user
+    from app.core.database import get_session
+    from app.main import create_app
+    from app.models.dashboard_user import DashboardUser
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(requested_materials=["Corporate Prospectus"])
+    )
+
+    sends: list = []
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+    ):
+        sends.append(to_email)
+        return True
+
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+    monkeypatch.setattr(
+        pack_delivery, "get_settings", lambda: Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    )
+
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+    user = DashboardUser(
+        email="staff@churchgate.com", role="admin", owner_id=None, hashed_password="x"
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        res = await c.post(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}/resend-pack")
+    assert res.status_code == 200, res.text
+    assert res.json()["lead"]["pack_delivery_status"] == "sent"
+    assert sends == ["ada@example.com"]
+
+
+async def test_resend_lead_pack_wrong_campaign_404(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api.dependencies import get_current_user
+    from app.core.database import get_session
+    from app.main import create_app
+    from app.models.dashboard_user import DashboardUser
+
+    campaign = await _make_campaign(db_session)
+    other = await _make_campaign(db_session, slug="other-event")
+    lead = await lead_service.capture_lead(db_session, "other-event", _lead())
+
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+    user = DashboardUser(
+        email="staff@churchgate.com", role="admin", owner_id=None, hashed_password="x"
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        res = await c.post(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}/resend-pack")
+    assert res.status_code == 404
+    assert other.id != campaign.id

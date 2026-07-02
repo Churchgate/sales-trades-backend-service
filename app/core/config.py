@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Recipient for the internal "New Lead" notification sent to the sales team.
     # Leave empty to disable notifications (e.g. dev/QA environments).
     campaign_notification_email: str = ""
+    # CC'd on every digital-pack email sent to a visitor, so the team gets a copy
+    # of exactly what was delivered (audit/verification). Leave empty to disable.
+    campaign_cc_email: str = ""
 
     # --- Booth/stand lead capture ---
     # Management dashboard origin (CORS), if deployed separately from the API.

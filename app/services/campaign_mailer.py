@@ -94,12 +94,15 @@ async def send_campaign_email(
     settings: Settings | None = None,
     from_email: str | None = None,
     from_name: str | None = None,
+    cc: list[str] | None = None,
 ) -> bool:
     """Send one campaign email via SendGrid (WTC Abuja account). Returns True on success.
 
     No-ops when WTC_SENDGRID_API_KEY is unset — captures still work in dev/QA,
     they just skip the email. The override from_email/from_name falls back to
-    event_mail_from_email/event_mail_from_name from settings.
+    event_mail_from_email/event_mail_from_name from settings. `cc` recipients get
+    a copy (SendGrid rejects a cc that duplicates the to address, so those are
+    dropped).
     """
     settings = settings or get_settings()
 
@@ -114,8 +117,15 @@ async def send_campaign_email(
     sender_email = from_email or settings.event_mail_from_email or settings.mail_from_email
     sender_name = from_name or settings.event_mail_from_name or settings.mail_from_name
 
+    personalization: dict = {"to": [{"email": to_email}]}
+    cc_recipients = [
+        addr for addr in (cc or []) if addr and addr.lower() != to_email.lower()
+    ]
+    if cc_recipients:
+        personalization["cc"] = [{"email": addr} for addr in cc_recipients]
+
     payload = {
-        "personalizations": [{"to": [{"email": to_email}]}],
+        "personalizations": [personalization],
         "from": {"email": sender_email, "name": sender_name},
         "subject": subject,
         "content": [
