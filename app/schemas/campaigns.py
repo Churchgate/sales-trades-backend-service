@@ -95,6 +95,7 @@ class LeadOut(BaseModel):
     crm_synced_at: datetime | None = None
     crm_contact_id: str | None = None
     pack_delivery_status: str
+    pack_delivery_error: str | None = None
     pack_delivered_at: datetime | None = None
     pack_delivered_materials: list[str] | None = None
     # Did they request a pack and did we deliver it? (dashboard request→delivery check)
