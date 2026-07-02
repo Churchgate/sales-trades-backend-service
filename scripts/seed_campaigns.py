@@ -116,10 +116,10 @@ _NOG_2026_CONFIG: dict = {
 # requesting only those are captured/tagged but not emailed until a file is added
 # here (then a resend/retry delivers). The three below deliver today.
 #
-# NOTE: the website also submits interest slugs (e.g. "residences"), so `interests`
-# and `tag_map` here don't yet match what it sends — tags fall through as the raw
-# slug. Left as-is pending the full list of the website's interest values; not a
-# delivery blocker.
+# The website also submits interest slugs (offices/residences/both/security/full/
+# investment/general) — mapped to CRM tags via the tag_map override below. The
+# `interests` list inherited from the stand app is unused server-side for the
+# website (its form is hardcoded, not driven by this config), so it's left as-is.
 _WTC_WEBSITE_CONFIG: dict = {
     **_NOG_2026_CONFIG,
     "materials": [
@@ -142,6 +142,24 @@ _WTC_WEBSITE_CONFIG: dict = {
         "infrastructure_specs": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
         ],
+    },
+    # Website leads are a distinct channel, not the NOG stand — so drop the stand's
+    # base tags for a website-specific pair.
+    "base_tags": ["WTC Abuja", "Website"],
+    # The website's two forms submit these interest slugs (index.html #finterest /
+    # #pinterest). _derive_tags passes any unmapped interest through as its raw
+    # slug, so without this every website lead was tagged e.g. "residences". Keys =
+    # the exact form option values; values reuse the stand app's tag names where the
+    # category matches (offices/residences/security) so both channels group together
+    # in the CRM, with website-only options tagged in their own words.
+    "tag_map": {
+        "offices": "Office Leasing",
+        "residences": "Executive Residences",
+        "both": "Office & Residences",
+        "security": "Security & Continuity",
+        "full": "Full Development Tour",
+        "investment": "Investment / Purchase",
+        "general": "General Information",
     },
 }
 
