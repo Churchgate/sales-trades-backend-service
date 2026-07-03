@@ -484,6 +484,11 @@ async def test_pack_email_is_source_aware_and_uses_display_meta(
     assert "Full Development Brochure" in html  # display title, not the raw label
     assert "enquiries@wtcabuja.com" in html  # fixed contact strip
     assert "NOG Energy Week 2026" in html  # event line present when configured
+    # Mobile-responsive download button: the media query stacks the row and the
+    # nowrap keeps the label from wrapping letter-by-letter on a collapsed column.
+    assert "@media only screen and (max-width:480px)" in html
+    assert "white-space:nowrap" in html
+    assert 'class="wtc-btn"' in html and 'class="wtc-row-btn"' in html
     # No forbidden CSS that email clients strip.
     for bad in ("position:absolute", "display:flex", "object-fit", "linear-gradient"):
         assert bad not in html
