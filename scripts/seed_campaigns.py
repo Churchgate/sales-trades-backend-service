@@ -40,13 +40,14 @@ _NOG_2026_CONFIG: dict = {
         "Clubhouse",
         "Location",
     ],
+    # Trimmed to the three documents we hand out for now: Brochure + both
+    # floorplans. Security/Clubhouse/Location are held back until their assets are
+    # finalised (Location Overview currently 400s) — restore here + re-seed to bring
+    # them back. The stand app reads this list, so these are also the app's options.
     "materials": [
         "Corporate Prospectus",
         "Office Floorplates",
         "Residence Floorplans",
-        "Security & Continuity Brief",
-        "Clubhouse Overview",
-        "Location Overview",
     ],
     "timing_options": ["Immediate", "0-3 months", "3-6 months", "6-12 months", "Future"],
     # Digital-pack delivery (services/pack_delivery.py): each material label maps to
@@ -65,12 +66,6 @@ _NOG_2026_CONFIG: dict = {
         ],
         "Residence Floorplans": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Residential-Floorplans-Email.pdf",
-        ],
-        "Location Overview": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/location_overview.png",
-        ],
-        "Security & Continuity Brief": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
         ],
     },
     # Digital-pack + viewing-confirmation email copy/branding (services/campaign_mailer).
@@ -114,16 +109,6 @@ _NOG_2026_CONFIG: dict = {
             "title": "Executive Residences",
             "description": "1-bed, 2-bed & 3-bed apartments · Penthouses on request",
         },
-        "Security & Continuity Brief": {
-            "eyebrow": "Security & Continuity",
-            "title": "Security & Continuity Brief",
-            "description": "Perimeter, access control and business-continuity overview.",
-        },
-        "Location Overview": {
-            "eyebrow": "Location",
-            "title": "Location Overview",
-            "description": "Central Business District, Abuja.",
-        },
     },
     "consent": {
         "required": (
@@ -165,12 +150,13 @@ _NOG_2026_CONFIG: dict = {
 # website (its form is hardcoded, not driven by this config), so it's left as-is.
 _WTC_WEBSITE_CONFIG: dict = {
     **_NOG_2026_CONFIG,
+    # Trimmed to Brochure + both floorplans (matches the NOG pack). infrastructure_specs
+    # (Security) and availability are held back for now — restore here + re-seed to bring
+    # them back.
     "materials": [
         "brochure",
         "office_floorplans",
         "residential_plans",
-        "infrastructure_specs",
-        "availability",
     ],
     "materials_assets": {
         "brochure": [
@@ -183,9 +169,6 @@ _WTC_WEBSITE_CONFIG: dict = {
         ],
         "residential_plans": [
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC-Abuja-Residential-Floorplans-Email.pdf",
-        ],
-        "infrastructure_specs": [
-            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/campaign-assets/WTC%20Abuja%20Security%20Presentation%202026.pdf",
         ],
     },
     # Website leads are a distinct channel, not the NOG stand — so drop the stand's
@@ -243,11 +226,6 @@ _WTC_WEBSITE_CONFIG: dict = {
             "eyebrow": "Residence Floorplans",
             "title": "Executive Residences",
             "description": "1-bed, 2-bed & 3-bed apartments · Penthouses on request",
-        },
-        "infrastructure_specs": {
-            "eyebrow": "Security & Continuity",
-            "title": "Security & Continuity Brief",
-            "description": "Perimeter, access control and business-continuity overview.",
         },
     },
 }

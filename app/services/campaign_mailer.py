@@ -312,17 +312,37 @@ _C_HERO_BG = "#111110"
 _SERIF = "Georgia,'Times New Roman',serif"
 _SANS = "'Helvetica Neue',Helvetica,Arial,sans-serif"
 
+# Email <head>: charset + a mobile media query. On phones (<=480px) each download
+# row stacks — the button drops full-width below its text instead of being squeezed
+# into a collapsed right column (which made the label wrap letter-by-letter). Desktop
+# and Outlook ignore the media query and keep the two-column look; the button's
+# white-space:nowrap is the fallback for clients that strip <style>.
+_HEAD = (
+    '<!DOCTYPE html>\n<html><head><meta charset="UTF-8">'
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    "<style>"
+    "@media only screen and (max-width:480px){"
+    ".wtc-row-text{display:block!important;width:100%!important;}"
+    ".wtc-row-btn{display:block!important;width:100%!important;"
+    "padding-left:0!important;text-align:left!important;}"
+    ".wtc-btn{margin:14px 0 0 0!important;width:100%!important;}"
+    ".wtc-btn a{display:block!important;text-align:center!important;}"
+    "}"
+    "</style></head>"
+)
+
 
 def _c_button(url: str, label: str, *, gold: bool = False) -> str:
     """Bulletproof (Outlook-safe) download button: bgcolor on a table cell."""
     bg = _C_GOLD_DK if gold else _C_INK
     return (
         f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
-        f'style="display:inline-block;margin:6px 0 0 8px;">'
+        f'class="wtc-btn" style="display:inline-block;margin:6px 0 0 8px;">'
         f'<tr><td bgcolor="{bg}" style="border-radius:2px;">'
         f'<a href="{url}" target="_blank" style="display:inline-block;padding:11px 22px;'
         f'font-family:{_SANS};font-size:10px;font-weight:700;letter-spacing:0.1em;'
-        f'text-transform:uppercase;color:#ffffff;text-decoration:none;">{label} &#8595;</a>'
+        f'white-space:nowrap;text-transform:uppercase;color:#ffffff;'
+        f'text-decoration:none;">{label} &#8595;</a>'
         f"</td></tr></table>"
     )
 
@@ -503,12 +523,12 @@ def build_pack_email(
         inner = f"""\
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
                       <tr>
-                        <td style="vertical-align:middle;">
+                        <td class="wtc-row-text" style="vertical-align:middle;">
                           <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 4px;">{eyebrow}</p>
                           <p style="font-family:{_SERIF};font-size:16px;color:{_C_INK};margin:0;">{title}</p>
                           {desc_html}
                         </td>
-                        <td align="right" style="vertical-align:middle;padding-left:16px;">{buttons}</td>
+                        <td class="wtc-row-btn" align="right" style="vertical-align:middle;padding-left:16px;">{buttons}</td>
                       </tr>
                     </table>"""
         if featured:
@@ -539,7 +559,7 @@ def build_pack_email(
     footer_bits.append("If a download link doesn't open, reply to this email and we'll assist.")
     footer_note = "<br>".join(footer_bits)
 
-    html = "<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\">" + _c_shell(
+    html = _HEAD + _c_shell(
         tag="Digital Pack",
         heading_html="Your materials<br>are ready.",
         body_html=body_html,
@@ -620,12 +640,12 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
                   <td style="background:{_C_PANEL};border-radius:3px;padding:22px 24px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
                       <tr>
-                        <td style="vertical-align:middle;">
+                        <td class="wtc-row-text" style="vertical-align:middle;">
                           <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 5px;">Prepare for your visit</p>
                           <p style="font-family:{_SERIF};font-size:15px;color:{_C_INK};margin:0 0 4px;">Download the full brochure</p>
                           <p style="font-family:{_SANS};font-size:11px;color:{_C_MUTED};line-height:1.5;margin:0;">Offices, residences, clubhouse and infrastructure — everything in one document.</p>
                         </td>
-                        <td align="right" style="vertical-align:middle;padding-left:16px;">{_c_button(brochure_url, "Download")}</td>
+                        <td class="wtc-row-btn" align="right" style="vertical-align:middle;padding-left:16px;">{_c_button(brochure_url, "Download")}</td>
                       </tr>
                     </table>
                   </td>
@@ -649,7 +669,7 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
         f"You are receiving this because you requested a viewing at {_domain}.<br>"
         "World Trade Center Abuja &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
     )
-    html = "<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\">" + _c_shell(
+    html = _HEAD + _c_shell(
         tag="Viewing Request",
         heading_html="Your viewing request<br>has been received.",
         body_html=body_html,
