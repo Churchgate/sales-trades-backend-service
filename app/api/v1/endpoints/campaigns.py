@@ -208,16 +208,21 @@ async def delete_lead(campaign_id: int, lead_id: int, session: SessionDep) -> Me
 async def resend_lead_pack(
     campaign_id: int, lead_id: int, session: SessionDep
 ) -> LeadCaptureResponse:
-    """Re-attempt digital-pack delivery for a single lead — the per-lead version of
-    the bulk resend, for when staff want to retry one visitor from the dashboard.
-    `deliver_pack` recomputes the deliverable materials and re-sends regardless of
-    the current status, so it works whether the pack previously failed, was skipped,
-    or already sent."""
+    """Re-attempt document delivery for a single lead — the per-lead version of the
+    bulk resend, for when staff want to retry one visitor from the dashboard.
+
+    Viewing/enquiry leads (no requested materials) receive documents via the viewing
+    email, so re-send that; everyone else goes through `deliver_pack`, which recomputes
+    the deliverable materials and re-sends regardless of the current status (whether the
+    pack previously failed, was skipped, or already sent)."""
     campaign = await _require_campaign(session, campaign_id)
     lead = await leads_repo.get(session, lead_id)
     if lead is None or lead.campaign_id != campaign_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
-    lead = await pack_delivery.deliver_pack(session, lead, campaign)
+    if lead.inspection_requested and not lead.requested_materials:
+        lead = await pack_delivery.deliver_viewing(session, lead, campaign)
+    else:
+        lead = await pack_delivery.deliver_pack(session, lead, campaign)
     return LeadCaptureResponse(status_code=status.HTTP_200_OK, lead=_lead_out(lead))
 
 

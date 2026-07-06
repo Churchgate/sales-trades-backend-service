@@ -933,6 +933,57 @@ async def test_resend_lead_pack_redelivers_over_http(
     assert sends == ["ada@example.com"]
 
 
+async def test_resend_viewing_lead_resends_viewing_email(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-lead resend on a viewing/enquiry lead (no requested materials) re-sends the
+    viewing email (which carries the documents) and keeps the lead marked sent."""
+    from app.api.dependencies import get_current_user
+    from app.core.database import get_session
+    from app.main import create_app
+    from app.models.dashboard_user import DashboardUser
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="viewer@example.com", inspection_requested=True),
+    )
+    assert not lead.requested_materials  # viewing-only
+
+    sends: list = []
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+    ):
+        sends.append(to_email)
+        return True
+
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+    monkeypatch.setattr(
+        pack_delivery, "get_settings", lambda: Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    )
+
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+    user = DashboardUser(
+        email="staff@churchgate.com", role="admin", owner_id=None, hashed_password="x"
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        res = await c.post(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}/resend-pack")
+    assert res.status_code == 200, res.text
+    assert res.json()["lead"]["pack_delivery_status"] == "sent"
+    assert sends == ["viewer@example.com"]  # the viewing email was re-sent
+
+
 async def test_resend_lead_pack_wrong_campaign_404(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
