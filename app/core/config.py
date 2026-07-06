@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # upsert dedups by deal_id so any overlap is harmless. Comma-separated.
     freshsales_deal_view_ids: str = "17001462746,17001462752,17001462751"
 
+    # --- Google Analytics (GA4 Data API) ---
+    # Numeric GA4 property id (Admin → Property settings), not the G-XXXX tag id.
+    ga_property_id: str = ""
+    # The service-account key JSON, as a raw string (secret). Empty disables the
+    # website-analytics panel (endpoint returns configured=false).
+    ga_service_account_json: str = ""
+
     # --- Frontend ---
     frontend_base_url: str = "http://localhost:3000"
 
