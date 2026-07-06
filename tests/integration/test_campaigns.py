@@ -77,6 +77,30 @@ async def test_capture_lead_creates_and_derives_tags(db_session: AsyncSession) -
     assert "Newsletter Opt-In" in lead.tags
 
 
+async def test_capture_accepts_blank_or_missing_phone(db_session: AsyncSession) -> None:
+    """The public website marks phone optional; a blank/omitted phone must not be
+    rejected and must still capture (stored as "") so the pack can be delivered.
+    Regression: phone was required (min_length=1), silently 422'ing every phone-less
+    website registration before a lead was ever created."""
+    await _make_campaign(db_session)
+    # phone omitted entirely -> schema default None (would previously fail validation).
+    payload = LeadCreateRequest(
+        first_name="Ada", last_name="Lovelace", email="nophone@example.com",
+        company="Energy Co",
+    )
+    assert payload.phone is None
+    lead = await lead_service.capture_lead(db_session, "nog-2026", payload)
+    assert lead.id is not None
+    assert lead.phone == ""  # NOT NULL column, coerced from None
+    # An explicit empty string (what the website form actually sends) is accepted too.
+    lead2 = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        LeadCreateRequest(first_name="Grace", last_name="Hopper",
+                          email="blank@example.com", phone="", company="Navy"),
+    )
+    assert lead2.phone == ""
+
+
 async def test_capture_normalises_email_and_dedups(db_session: AsyncSession) -> None:
     await _make_campaign(db_session)
     first = await lead_service.capture_lead(db_session, "nog-2026", _lead(email="ADA@Example.com"))
@@ -526,6 +550,38 @@ async def test_build_viewing_booking_email() -> None:
         assert bad not in html
 
 
+async def test_viewing_email_includes_full_document_set() -> None:
+    """Viewing registrants don't pick materials, so the viewing email carries the
+    full document set (brochure + both floorplans), not just a brochure teaser."""
+    from app.services import campaign_mailer
+
+    campaign = Campaign(
+        slug="wtcabuja-website", name="Web", status=STATUS_ACTIVE,
+        config={
+            "materials": ["brochure", "office_floorplans", "residential_plans"],
+            "materials_assets": {
+                "brochure": "https://a/brochure.pdf",
+                "office_floorplans": ["https://a/office.pdf"],
+                "residential_plans": "https://a/residential.pdf",
+            },
+            "materials_display": {
+                "brochure": {"title": "Full Development Brochure", "featured": True},
+                "office_floorplans": {"eyebrow": "Office Floorplate", "title": "Grade A Offices"},
+                "residential_plans": {"title": "Executive Residences"},
+            },
+            "viewing_booking": {"brochure_url": "https://a/brochure.pdf"},
+            "digital_pack": {"hero_url": "https://h/hero.jpg", "logo_url": "https://l/logo.png"},
+        },
+    )
+    lead = Lead(campaign_id=2, email="v@example.com", first_name="Ada", last_name="L",
+                phone="", company="Co", inspection_requested=True)
+    _subject, html, text = campaign_mailer.build_viewing_booking_email(lead, campaign)
+    for url in ("https://a/brochure.pdf", "https://a/office.pdf", "https://a/residential.pdf"):
+        assert url in html and url in text  # floorplans present in both parts
+    assert "Grade A Offices" in html and "Executive Residences" in html
+    assert "Before your visit" in html
+
+
 async def test_capture_with_inspection_sends_viewing_email(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -546,15 +602,20 @@ async def test_capture_with_inspection_sends_viewing_email(
     monkeypatch.setattr(campaigns_api.campaign_mailer, "send_viewing_booking", _fake_view)
     monkeypatch.setattr(campaigns_api.campaign_mailer, "send_lead_notification", _noop_notify)
 
-    await campaigns_api.capture_lead(
+    resp = await campaigns_api.capture_lead(
         "nog-2026", _lead(email="viewer@example.com", inspection_requested=True), db_session
     )
     assert sent == ["viewer@example.com"]
+    # A successful viewing email carried the documents -> recorded as a pack delivery
+    # so the dashboard shows "sent" rather than a bare "not requested".
+    assert resp.lead.pack_delivery_status == "sent"
+    assert "Corporate Prospectus" in (resp.lead.pack_delivered_materials or [])
 
-    await campaigns_api.capture_lead(
+    resp2 = await campaigns_api.capture_lead(
         "nog-2026", _lead(email="packer@example.com", inspection_requested=False), db_session
     )
     assert sent == ["viewer@example.com"]  # unchanged — no viewing email for pack-only
+    assert resp2.lead.pack_delivery_status == "not_requested"  # untouched
 
 
 async def test_deliver_pack_includes_logo_when_configured(
@@ -870,6 +931,57 @@ async def test_resend_lead_pack_redelivers_over_http(
     assert res.status_code == 200, res.text
     assert res.json()["lead"]["pack_delivery_status"] == "sent"
     assert sends == ["ada@example.com"]
+
+
+async def test_resend_viewing_lead_resends_viewing_email(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-lead resend on a viewing/enquiry lead (no requested materials) re-sends the
+    viewing email (which carries the documents) and keeps the lead marked sent."""
+    from app.api.dependencies import get_current_user
+    from app.core.database import get_session
+    from app.main import create_app
+    from app.models.dashboard_user import DashboardUser
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="viewer@example.com", inspection_requested=True),
+    )
+    assert not lead.requested_materials  # viewing-only
+
+    sends: list = []
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+    ):
+        sends.append(to_email)
+        return True
+
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+    monkeypatch.setattr(
+        pack_delivery, "get_settings", lambda: Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    )
+
+    app = create_app()
+
+    async def _get_session():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _get_session
+    user = DashboardUser(
+        email="staff@churchgate.com", role="admin", owner_id=None, hashed_password="x"
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        res = await c.post(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}/resend-pack")
+    assert res.status_code == 200, res.text
+    assert res.json()["lead"]["pack_delivery_status"] == "sent"
+    assert sends == ["viewer@example.com"]  # the viewing email was re-sent
 
 
 async def test_resend_lead_pack_wrong_campaign_404(

@@ -135,6 +135,38 @@ async def deliver_pack(
     return await leads_repo.update(session, lead)
 
 
+async def deliver_viewing(
+    session: AsyncSession,
+    lead: Lead,
+    campaign: Campaign,
+    *,
+    settings: Settings | None = None,
+) -> Lead:
+    """Send the viewing-confirmation email (best-effort) and, when it succeeds and
+    carried the document set, record it as a successful pack delivery.
+
+    Viewing/enquiry registrants don't select materials, but the viewing email now
+    ships the full document set (brochure + floorplans). So a successful send means
+    the documents reached them — mark the lead ``sent`` (with the delivered docs) so
+    the dashboard reflects it, exactly like a pack. A real pack already delivered
+    (lead requested materials) is left untouched.
+    """
+    settings = settings or get_settings()
+    sent = await campaign_mailer.send_viewing_booking(lead, campaign, settings)
+    if not sent or lead.pack_delivery_status == PACK_SENT:
+        return lead
+
+    docs = campaign_mailer.all_materials(campaign.config or {})
+    if not docs:
+        return lead
+
+    lead.pack_delivery_status = PACK_SENT
+    lead.pack_delivered_at = datetime.now(UTC)
+    lead.pack_delivered_materials = [label for label, _urls in docs]
+    lead.pack_delivery_error = None
+    return await leads_repo.update(session, lead)
+
+
 async def deliver_pending(session: AsyncSession, *, limit: int = 200) -> int:
     """Send all pending/failed packs (across campaigns). Returns #delivered this run."""
     leads = await leads_repo.list_pending_pack_delivery(

@@ -53,7 +53,7 @@ def _derive_tags(campaign: Campaign, payload: LeadCreateRequest) -> list[str]:
 def _apply_payload(lead: Lead, campaign: Campaign, payload: LeadCreateRequest) -> None:
     lead.first_name = payload.first_name
     lead.last_name = payload.last_name
-    lead.phone = payload.phone
+    lead.phone = payload.phone or ""  # column is NOT NULL; store "" for blank/None
     lead.company = payload.company
     lead.job_title = payload.job_title
     lead.source = payload.source

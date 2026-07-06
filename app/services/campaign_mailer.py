@@ -459,50 +459,32 @@ def _greeting(lead: Lead) -> str:
     return f"Hello {lead.first_name}," if lead.first_name else "Hello,"
 
 
-# ── Digital-pack delivery email (to lead) ─────────────────────────────────────
+def _btn_label(i: int, total: int) -> str:
+    return f"Download {i + 1}" if total > 1 else "Download"
 
 
-def build_pack_email(
-    lead: Lead, campaign: Campaign, materials: list[tuple[str, list[str]]]
-) -> tuple[str, str, str]:
-    """(subject, html, text) for the digital-pack email sent to the visitor.
+def all_materials(config: dict) -> list[tuple[str, list[str]]]:
+    """Every configured material with a download asset, in ``materials`` order.
 
-    Dynamic: one download row per requested material that has a configured asset
-    (`materials`, from pack_delivery.deliverable_materials). Copy is source-aware
-    via config["digital_pack"]:
-        subject, intro, event_line (footer; NOG only), hero_url, logo_url
-    and each row's label/blurb via config["materials_display"][label] =
-        {eyebrow, title, description, featured}.
+    The full document set for the campaign — used by the viewing email, which has
+    no per-lead material selection, so viewing registrants still receive the same
+    brochure + floorplans as the digital pack.
     """
-    config = campaign.config or {}
-    pack_cfg = config.get("digital_pack", {})
-    display: dict = config.get("materials_display", {})
-    subject = pack_cfg.get("subject", "Your WTC Abuja Digital Pack")
-    intro = pack_cfg.get(
-        "intro",
-        "Thank you for your interest in World Trade Center Abuja. As requested, "
-        "your materials are below — tap any button to download.",
-    )
-    event_line = pack_cfg.get("event_line", "")
-    hero_url = pack_cfg.get("hero_url", "")
-    logo_url = pack_cfg.get("logo_url", "")
-    greeting = _greeting(lead)
+    assets: dict = config.get("materials_assets", {})
+    out: list[tuple[str, list[str]]] = []
+    for label in config.get("materials", []):
+        entry = assets.get(label)
+        if not entry:
+            continue
+        urls = [entry] if isinstance(entry, str) else [u for u in entry if u]
+        if urls:
+            out.append((label, urls))
+    return out
 
-    def _btn_label(i: int, total: int) -> str:
-        return f"Download {i + 1}" if total > 1 else "Download"
 
-    # ── plain text ───────────────────────────────────────────────────────────
-    text_lines = [greeting, "", intro, ""]
-    for label, urls in materials:
-        meta = display.get(label, {})
-        text_lines.append(meta.get("title", label) + ":")
-        for i, url in enumerate(urls):
-            text_lines.append(f"  {_btn_label(i, len(urls))}: {url}")
-        text_lines.append("")
-    text_lines.append("Questions? enquiries@wtcabuja.com")
-    text = "\n".join(text_lines).rstrip() + "\n"
-
-    # ── HTML rows ────────────────────────────────────────────────────────────
+def _material_rows(materials: list[tuple[str, list[str]]], display: dict) -> str:
+    """Shared download-row markup for the pack + viewing emails (one row per
+    material; ``featured`` renders the highlighted cream panel)."""
     rows = []
     for label, urls in materials:
         meta = display.get(label, {})
@@ -543,7 +525,51 @@ def build_pack_email(
                 f'<tr><td style="border-top:1px solid {_C_LINE};padding:22px 0 20px;">'
                 f"{inner}</td></tr>"
             )
-    rows_html = "\n".join(rows)
+    return "\n".join(rows)
+
+
+# ── Digital-pack delivery email (to lead) ─────────────────────────────────────
+
+
+def build_pack_email(
+    lead: Lead, campaign: Campaign, materials: list[tuple[str, list[str]]]
+) -> tuple[str, str, str]:
+    """(subject, html, text) for the digital-pack email sent to the visitor.
+
+    Dynamic: one download row per requested material that has a configured asset
+    (`materials`, from pack_delivery.deliverable_materials). Copy is source-aware
+    via config["digital_pack"]:
+        subject, intro, event_line (footer; NOG only), hero_url, logo_url
+    and each row's label/blurb via config["materials_display"][label] =
+        {eyebrow, title, description, featured}.
+    """
+    config = campaign.config or {}
+    pack_cfg = config.get("digital_pack", {})
+    display: dict = config.get("materials_display", {})
+    subject = pack_cfg.get("subject", "Your WTC Abuja Digital Pack")
+    intro = pack_cfg.get(
+        "intro",
+        "Thank you for your interest in World Trade Center Abuja. As requested, "
+        "your materials are below — tap any button to download.",
+    )
+    event_line = pack_cfg.get("event_line", "")
+    hero_url = pack_cfg.get("hero_url", "")
+    logo_url = pack_cfg.get("logo_url", "")
+    greeting = _greeting(lead)
+
+    # ── plain text ───────────────────────────────────────────────────────────
+    text_lines = [greeting, "", intro, ""]
+    for label, urls in materials:
+        meta = display.get(label, {})
+        text_lines.append(meta.get("title", label) + ":")
+        for i, url in enumerate(urls):
+            text_lines.append(f"  {_btn_label(i, len(urls))}: {url}")
+        text_lines.append("")
+    text_lines.append("Questions? enquiries@wtcabuja.com")
+    text = "\n".join(text_lines).rstrip() + "\n"
+
+    # ── HTML rows ────────────────────────────────────────────────────────────
+    rows_html = _material_rows(materials, display)
 
     body_html = f"""\
               <p style="font-family:{_SANS};font-size:15px;color:{_C_INK};line-height:1.6;margin:0 0 8px;">{greeting}</p>
@@ -588,12 +614,16 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
     """(subject, html, text) confirming a viewing/inspection request to the visitor.
 
     Copy via config["viewing_booking"] = {subject, intro, brochure_url} and the
-    shared config["digital_pack"] hero_url/logo_url. The brochure CTA renders only
-    when brochure_url is set.
+    shared config["digital_pack"] hero_url/logo_url. Viewing registrants don't pick
+    materials, so the "Before your visit" section carries the full document set
+    (config["materials"]/["materials_assets"]) — brochure + floorplans — falling
+    back to the single brochure_url CTA when no materials are configured.
     """
     config = campaign.config or {}
     view_cfg = config.get("viewing_booking", {})
     pack_cfg = config.get("digital_pack", {})
+    display: dict = config.get("materials_display", {})
+    materials = all_materials(config)
     subject = view_cfg.get("subject", "Your WTC Abuja Viewing Request")
     intro = view_cfg.get(
         "intro",
@@ -610,7 +640,14 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
     text_lines = [greeting, "", intro, "", "Your viewing experience:"]
     for i, (title, desc) in enumerate(_VIEWING_STEPS, 1):
         text_lines.append(f"  {i}. {title} — {desc}")
-    if brochure_url:
+    if materials:
+        text_lines += ["", "Before your visit — your documents:"]
+        for label, urls in materials:
+            meta = display.get(label, {})
+            text_lines.append(meta.get("title", label) + ":")
+            for i, url in enumerate(urls):
+                text_lines.append(f"  {_btn_label(i, len(urls))}: {url}")
+    elif brochure_url:
         text_lines += ["", f"Download the full brochure: {brochure_url}"]
     text_lines += ["", "Questions? enquiries@wtcabuja.com"]
     text = "\n".join(text_lines) + "\n"
@@ -632,9 +669,19 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
                   </tr>""")
     steps_html = "\n".join(steps)
 
-    brochure_block = ""
-    if brochure_url:
-        brochure_block = f"""\
+    # Viewing registrants receive the full document set (brochure + floorplans),
+    # not just a brochure teaser. Fall back to the single brochure CTA only if no
+    # materials are configured.
+    docs_rows = _material_rows(materials, display)
+    if docs_rows:
+        docs_block = f"""\
+              <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 4px;">Before your visit</p>
+              <p style="font-family:{_SANS};font-size:13px;color:{_C_INK_SOFT};line-height:1.6;margin:0 0 4px;">Your documents are ready — tap any button to download.</p>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+{docs_rows}
+              </table>"""
+    elif brochure_url:
+        docs_block = f"""\
               <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:8px;">
                 <tr>
                   <td style="background:{_C_PANEL};border-radius:3px;padding:22px 24px;">
@@ -651,6 +698,8 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
                   </td>
                 </tr>
               </table>"""
+    else:
+        docs_block = ""
 
     body_html = f"""\
               <p style="font-family:{_SANS};font-size:15px;color:{_C_INK};line-height:1.6;margin:0 0 8px;">{greeting}</p>
@@ -659,7 +708,7 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
               <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:24px;">
 {steps_html}
               </table>
-{brochure_block}"""
+{docs_block}"""
 
     _domain = (
         f'<a href="https://wtcabuja.com" style="color:{_C_GOLD};text-decoration:none;">'
