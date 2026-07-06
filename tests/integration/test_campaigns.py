@@ -550,6 +550,38 @@ async def test_build_viewing_booking_email() -> None:
         assert bad not in html
 
 
+async def test_viewing_email_includes_full_document_set() -> None:
+    """Viewing registrants don't pick materials, so the viewing email carries the
+    full document set (brochure + both floorplans), not just a brochure teaser."""
+    from app.services import campaign_mailer
+
+    campaign = Campaign(
+        slug="wtcabuja-website", name="Web", status=STATUS_ACTIVE,
+        config={
+            "materials": ["brochure", "office_floorplans", "residential_plans"],
+            "materials_assets": {
+                "brochure": "https://a/brochure.pdf",
+                "office_floorplans": ["https://a/office.pdf"],
+                "residential_plans": "https://a/residential.pdf",
+            },
+            "materials_display": {
+                "brochure": {"title": "Full Development Brochure", "featured": True},
+                "office_floorplans": {"eyebrow": "Office Floorplate", "title": "Grade A Offices"},
+                "residential_plans": {"title": "Executive Residences"},
+            },
+            "viewing_booking": {"brochure_url": "https://a/brochure.pdf"},
+            "digital_pack": {"hero_url": "https://h/hero.jpg", "logo_url": "https://l/logo.png"},
+        },
+    )
+    lead = Lead(campaign_id=2, email="v@example.com", first_name="Ada", last_name="L",
+                phone="", company="Co", inspection_requested=True)
+    _subject, html, text = campaign_mailer.build_viewing_booking_email(lead, campaign)
+    for url in ("https://a/brochure.pdf", "https://a/office.pdf", "https://a/residential.pdf"):
+        assert url in html and url in text  # floorplans present in both parts
+    assert "Grade A Offices" in html and "Executive Residences" in html
+    assert "Before your visit" in html
+
+
 async def test_capture_with_inspection_sends_viewing_email(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
