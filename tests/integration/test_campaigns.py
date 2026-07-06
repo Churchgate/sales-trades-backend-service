@@ -602,15 +602,20 @@ async def test_capture_with_inspection_sends_viewing_email(
     monkeypatch.setattr(campaigns_api.campaign_mailer, "send_viewing_booking", _fake_view)
     monkeypatch.setattr(campaigns_api.campaign_mailer, "send_lead_notification", _noop_notify)
 
-    await campaigns_api.capture_lead(
+    resp = await campaigns_api.capture_lead(
         "nog-2026", _lead(email="viewer@example.com", inspection_requested=True), db_session
     )
     assert sent == ["viewer@example.com"]
+    # A successful viewing email carried the documents -> recorded as a pack delivery
+    # so the dashboard shows "sent" rather than a bare "not requested".
+    assert resp.lead.pack_delivery_status == "sent"
+    assert "Corporate Prospectus" in (resp.lead.pack_delivered_materials or [])
 
-    await campaigns_api.capture_lead(
+    resp2 = await campaigns_api.capture_lead(
         "nog-2026", _lead(email="packer@example.com", inspection_requested=False), db_session
     )
     assert sent == ["viewer@example.com"]  # unchanged — no viewing email for pack-only
+    assert resp2.lead.pack_delivery_status == "not_requested"  # untouched
 
 
 async def test_deliver_pack_includes_logo_when_configured(

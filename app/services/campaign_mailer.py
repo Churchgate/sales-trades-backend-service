@@ -463,7 +463,7 @@ def _btn_label(i: int, total: int) -> str:
     return f"Download {i + 1}" if total > 1 else "Download"
 
 
-def _all_materials(config: dict) -> list[tuple[str, list[str]]]:
+def all_materials(config: dict) -> list[tuple[str, list[str]]]:
     """Every configured material with a download asset, in ``materials`` order.
 
     The full document set for the campaign — used by the viewing email, which has
@@ -623,7 +623,7 @@ def build_viewing_booking_email(lead: Lead, campaign: Campaign) -> tuple[str, st
     view_cfg = config.get("viewing_booking", {})
     pack_cfg = config.get("digital_pack", {})
     display: dict = config.get("materials_display", {})
-    materials = _all_materials(config)
+    materials = all_materials(config)
     subject = view_cfg.get("subject", "Your WTC Abuja Viewing Request")
     intro = view_cfg.get(
         "intro",
