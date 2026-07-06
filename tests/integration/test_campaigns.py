@@ -77,6 +77,30 @@ async def test_capture_lead_creates_and_derives_tags(db_session: AsyncSession) -
     assert "Newsletter Opt-In" in lead.tags
 
 
+async def test_capture_accepts_blank_or_missing_phone(db_session: AsyncSession) -> None:
+    """The public website marks phone optional; a blank/omitted phone must not be
+    rejected and must still capture (stored as "") so the pack can be delivered.
+    Regression: phone was required (min_length=1), silently 422'ing every phone-less
+    website registration before a lead was ever created."""
+    await _make_campaign(db_session)
+    # phone omitted entirely -> schema default None (would previously fail validation).
+    payload = LeadCreateRequest(
+        first_name="Ada", last_name="Lovelace", email="nophone@example.com",
+        company="Energy Co",
+    )
+    assert payload.phone is None
+    lead = await lead_service.capture_lead(db_session, "nog-2026", payload)
+    assert lead.id is not None
+    assert lead.phone == ""  # NOT NULL column, coerced from None
+    # An explicit empty string (what the website form actually sends) is accepted too.
+    lead2 = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        LeadCreateRequest(first_name="Grace", last_name="Hopper",
+                          email="blank@example.com", phone="", company="Navy"),
+    )
+    assert lead2.phone == ""
+
+
 async def test_capture_normalises_email_and_dedups(db_session: AsyncSession) -> None:
     await _make_campaign(db_session)
     first = await lead_service.capture_lead(db_session, "nog-2026", _lead(email="ADA@Example.com"))

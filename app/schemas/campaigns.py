@@ -33,7 +33,10 @@ class LeadCreateRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=120)
     last_name: str = Field(min_length=1, max_length=120)
     email: EmailStr
-    phone: str = Field(min_length=1, max_length=40)
+    # Optional: the public website marks phone ("Mobile / WhatsApp") optional, so
+    # blank submissions arrive as "". Accept None/"" here (stored as "") — requiring
+    # a non-empty phone silently 422'd every phone-less registration.
+    phone: str | None = Field(default=None, max_length=40)
     company: str = Field(min_length=1, max_length=200)
     job_title: str | None = Field(default=None, max_length=200)
 
