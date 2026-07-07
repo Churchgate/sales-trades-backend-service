@@ -1,9 +1,10 @@
-"""GA4 website-analytics reads for the dashboard "Website" panel.
+"""GA4 website-analytics reads for the dashboard "Website" panel (GA-snapshot style).
 
-Pulls visitors/sessions/pageviews, a daily time series, top pages, and top events
-from the Google Analytics Data API (property `settings.ga_property_id`, authed with
-`settings.ga_service_account_json`). The GA client is synchronous, so calls run in a
-threadpool; results are cached briefly to stay well inside GA's quota.
+Pulls KPI totals (vs the preceding window), a daily series with a previous-period
+overlay, top pages / events / countries / channels, and a realtime (last 30 min)
+block from the Google Analytics Data API (property `settings.ga_property_id`, authed
+with `settings.ga_service_account_json`). The GA client is synchronous, so calls run
+in a threadpool; results are cached briefly to stay well inside GA's quota.
 """
 
 from __future__ import annotations
@@ -17,17 +18,19 @@ import anyio
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.schemas.web_analytics import (
+    WebChannelRow,
     WebCountryRow,
     WebEventRow,
     WebKpi,
     WebPageRow,
+    WebRealtime,
     WebsiteAnalyticsResponse,
     WebTimePoint,
 )
 
 logger = get_logger(__name__)
 
-_CACHE_TTL_S = 300
+_CACHE_TTL_S = 120
 _cache: dict[int, tuple[float, WebsiteAnalyticsResponse]] = {}
 _cache_lock = threading.Lock()
 _client = None
@@ -60,6 +63,56 @@ def _iso(ga_date: str) -> str:
     return f"{ga_date[0:4]}-{ga_date[4:6]}-{ga_date[6:8]}" if len(ga_date) == 8 else ga_date
 
 
+def _i(v: str) -> int:
+    return int(float(v))
+
+
+def _realtime(client, prop: str) -> WebRealtime | None:
+    """Active users in the last 30 minutes: total, per-minute sparkline, by country.
+    Best-effort — realtime failing must not sink the historical panel."""
+    from google.analytics.data_v1beta.types import (
+        Dimension,
+        Metric,
+        RunRealtimeReportRequest,
+    )
+
+    try:
+        by_country_resp = client.run_realtime_report(
+            RunRealtimeReportRequest(
+                property=prop,
+                dimensions=[Dimension(name="country")],
+                metrics=[Metric(name="activeUsers")],
+                limit=10,
+            )
+        )
+        by_country = [
+            WebCountryRow(
+                country=r.dimension_values[0].value,
+                active_users=_i(r.metric_values[0].value),
+            )
+            for r in by_country_resp.rows
+        ]
+        total = sum(c.active_users for c in by_country)
+
+        minute_resp = client.run_realtime_report(
+            RunRealtimeReportRequest(
+                property=prop,
+                dimensions=[Dimension(name="minutesAgo")],
+                metrics=[Metric(name="activeUsers")],
+            )
+        )
+        counts = [0] * 30
+        for r in minute_resp.rows:
+            idx = _i(r.dimension_values[0].value)
+            if 0 <= idx < 30:
+                counts[idx] = _i(r.metric_values[0].value)
+        per_minute = [counts[29 - k] for k in range(30)]  # oldest → newest
+        return WebRealtime(active_users=total, per_minute=per_minute, by_country=by_country)
+    except Exception:  # noqa: BLE001
+        logger.warning("ga realtime report failed", exc_info=True)
+        return None
+
+
 def _run_blocking(days: int, settings: Settings) -> WebsiteAnalyticsResponse:
     from google.analytics.data_v1beta.types import (
         BatchRunReportsRequest,
@@ -74,92 +127,102 @@ def _run_blocking(days: int, settings: Settings) -> WebsiteAnalyticsResponse:
     prop = f"properties/{settings.ga_property_id}"
     current = DateRange(start_date=f"{days}daysAgo", end_date="today")
     previous = DateRange(start_date=f"{2 * days}daysAgo", end_date=f"{days + 1}daysAgo")
-    metric = lambda n: Metric(name=n)  # noqa: E731
+    m = lambda n: Metric(name=n)  # noqa: E731
+    d = lambda n: Dimension(name=n)  # noqa: E731
+    by_metric = lambda name: OrderBy(  # noqa: E731
+        metric=OrderBy.MetricOrderBy(metric_name=name), desc=True
+    )
+    kpi_metrics = [
+        m("activeUsers"), m("sessions"), m("screenPageViews"),
+        m("averageSessionDuration"), m("eventCount"), m("keyEvents"),
+    ]
 
-    summary = RunReportRequest(
-        property=prop,
-        date_ranges=[current, previous],
-        metrics=[metric("activeUsers"), metric("sessions"), metric("screenPageViews"),
-                 metric("averageSessionDuration")],
-    )
-    series = RunReportRequest(
-        property=prop, date_ranges=[current],
-        dimensions=[Dimension(name="date")],
-        metrics=[metric("activeUsers"), metric("sessions")],
-        order_bys=[OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="date"))],
-    )
-    pages = RunReportRequest(
-        property=prop, date_ranges=[current],
-        dimensions=[Dimension(name="pagePath")],
-        metrics=[metric("screenPageViews")],
-        order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
-        limit=10,
-    )
-    events = RunReportRequest(
-        property=prop, date_ranges=[current],
-        dimensions=[Dimension(name="eventName")],
-        metrics=[metric("eventCount")],
-        order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="eventCount"), desc=True)],
-        limit=10,
-    )
-    countries = RunReportRequest(
-        property=prop, date_ranges=[current],
-        dimensions=[Dimension(name="country")],
-        metrics=[metric("activeUsers")],
-        order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="activeUsers"), desc=True)],
-        limit=10,
-    )
-    resp = client.batch_run_reports(
-        BatchRunReportsRequest(property=prop, requests=[summary, series, pages, events, countries])
-    )
+    requests = [
+        RunReportRequest(property=prop, date_ranges=[current, previous], metrics=kpi_metrics),
+        RunReportRequest(
+            property=prop, date_ranges=[current], dimensions=[d("date")],
+            metrics=[m("activeUsers"), m("sessions")],
+            order_bys=[OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="date"))],
+        ),
+        RunReportRequest(
+            property=prop, date_ranges=[previous], dimensions=[d("date")],
+            metrics=[m("activeUsers"), m("sessions")],
+            order_bys=[OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="date"))],
+        ),
+        RunReportRequest(
+            property=prop, date_ranges=[current], dimensions=[d("pageTitle")],
+            metrics=[m("screenPageViews")], order_bys=[by_metric("screenPageViews")], limit=10,
+        ),
+        RunReportRequest(
+            property=prop, date_ranges=[current], dimensions=[d("eventName")],
+            metrics=[m("eventCount")], order_bys=[by_metric("eventCount")], limit=10,
+        ),
+        RunReportRequest(
+            property=prop, date_ranges=[current], dimensions=[d("country")],
+            metrics=[m("activeUsers")], order_bys=[by_metric("activeUsers")], limit=10,
+        ),
+        RunReportRequest(
+            property=prop, date_ranges=[current], dimensions=[d("sessionDefaultChannelGroup")],
+            metrics=[m("sessions")], order_bys=[by_metric("sessions")], limit=10,
+        ),
+    ]
+    # GA caps batchRunReports at 5 requests per call — chunk and concatenate.
+    r = []
+    for i in range(0, len(requests), 5):
+        resp = client.batch_run_reports(
+            BatchRunReportsRequest(property=prop, requests=requests[i : i + 5])
+        )
+        r.extend(resp.reports)
 
     # -- summary: two date-range rows (GA adds a `dateRange` dimension) --
     def _range_vals(report, key: str) -> list[str]:
         for row in report.rows:
             if row.dimension_values and row.dimension_values[0].value == key:
-                return [m.value for m in row.metric_values]
-        return ["0", "0", "0", "0"]
+                return [mv.value for mv in row.metric_values]
+        return ["0"] * 6
 
-    cur_v = _range_vals(resp.reports[0], "date_range_0")
-    prev_v = _range_vals(resp.reports[0], "date_range_1")
+    cur_v = _range_vals(r[0], "date_range_0")
+    prev_v = _range_vals(r[0], "date_range_1")
     kpi = WebKpi(
-        active_users=int(float(cur_v[0])), sessions=int(float(cur_v[1])),
-        page_views=int(float(cur_v[2])), avg_session_duration_s=round(float(cur_v[3]), 1),
-        active_users_prev=int(float(prev_v[0])), sessions_prev=int(float(prev_v[1])),
-        page_views_prev=int(float(prev_v[2])),
+        active_users=_i(cur_v[0]), sessions=_i(cur_v[1]), page_views=_i(cur_v[2]),
+        avg_session_duration_s=round(float(cur_v[3]), 1),
+        event_count=_i(cur_v[4]), key_events=_i(cur_v[5]),
+        active_users_prev=_i(prev_v[0]), sessions_prev=_i(prev_v[1]), page_views_prev=_i(prev_v[2]),
         avg_session_duration_prev_s=round(float(prev_v[3]), 1),
+        event_count_prev=_i(prev_v[4]), key_events_prev=_i(prev_v[5]),
     )
 
-    timeseries = [
-        WebTimePoint(
-            date=_iso(row.dimension_values[0].value),
-            active_users=int(float(row.metric_values[0].value)),
-            sessions=int(float(row.metric_values[1].value)),
-        )
-        for row in resp.reports[1].rows
-    ]
+    # -- daily series with previous-period overlay (aligned by day offset) --
+    cur_series = [(_iso(row.dimension_values[0].value),
+                   _i(row.metric_values[0].value), _i(row.metric_values[1].value))
+                  for row in r[1].rows]
+    prev_series = [(_i(row.metric_values[0].value), _i(row.metric_values[1].value))
+                   for row in r[2].rows]
+    timeseries = []
+    for idx, (dt, users, sess) in enumerate(cur_series):
+        pu, ps = prev_series[idx] if idx < len(prev_series) else (0, 0)
+        timeseries.append(WebTimePoint(
+            date=dt, active_users=users, sessions=sess,
+            active_users_prev=pu, sessions_prev=ps,
+        ))
+
     top_pages = [
-        WebPageRow(path=row.dimension_values[0].value, views=int(float(row.metric_values[0].value)))
-        for row in resp.reports[2].rows
+        WebPageRow(title=row.dimension_values[0].value, views=_i(row.metric_values[0].value))
+        for row in r[3].rows
     ]
-    event_rows = [
-        WebEventRow(
-            name=row.dimension_values[0].value,
-            count=int(float(row.metric_values[0].value)),
-        )
-        for row in resp.reports[3].rows
-    ]
-    country_rows = [
-        WebCountryRow(
-            country=row.dimension_values[0].value,
-            active_users=int(float(row.metric_values[0].value)),
-        )
-        for row in resp.reports[4].rows
-    ]
+    events = [WebEventRow(name=row.dimension_values[0].value, count=_i(row.metric_values[0].value))
+              for row in r[4].rows]
+    countries = [WebCountryRow(country=row.dimension_values[0].value,
+                               active_users=_i(row.metric_values[0].value))
+                 for row in r[5].rows]
+    channels = [WebChannelRow(channel=row.dimension_values[0].value,
+                              sessions=_i(row.metric_values[0].value))
+                for row in r[6].rows]
+
     return WebsiteAnalyticsResponse(
         status_code=200, configured=True, days=days, kpi=kpi,
-        timeseries=timeseries, top_pages=top_pages, events=event_rows,
-        countries=country_rows,
+        timeseries=timeseries, top_pages=top_pages, events=events,
+        countries=countries, channels=channels, realtime=_realtime(client, prop),
     )
 
 

@@ -1,4 +1,9 @@
-"""Response schemas for the GA4 website-analytics panel (services/web_analytics.py)."""
+"""Response schemas for the GA4 website-analytics panel (services/web_analytics.py).
+
+Mirrors GA4's "report snapshot": KPI totals (vs the preceding window), a daily
+series with a previous-period overlay, top pages / events / countries / channels,
+and a realtime (last 30 min) block.
+"""
 
 from pydantic import BaseModel
 
@@ -8,21 +13,28 @@ class WebKpi(BaseModel):
     sessions: int
     page_views: int
     avg_session_duration_s: float
-    # Same metrics for the immediately preceding window (for % deltas in the UI).
+    event_count: int
+    key_events: int
+    # Same metrics for the immediately preceding window (for % deltas).
     active_users_prev: int
     sessions_prev: int
     page_views_prev: int
     avg_session_duration_prev_s: float
+    event_count_prev: int
+    key_events_prev: int
 
 
 class WebTimePoint(BaseModel):
-    date: str  # ISO YYYY-MM-DD
+    date: str  # ISO YYYY-MM-DD (current window)
     active_users: int
     sessions: int
+    # Aligned value from the previous window (by day offset) for the GA overlay line.
+    active_users_prev: int
+    sessions_prev: int
 
 
 class WebPageRow(BaseModel):
-    path: str
+    title: str  # GA "Views by Page title"
     views: int
 
 
@@ -36,6 +48,17 @@ class WebCountryRow(BaseModel):
     active_users: int
 
 
+class WebChannelRow(BaseModel):
+    channel: str  # GA session default channel group (Direct, Organic Search, …)
+    sessions: int
+
+
+class WebRealtime(BaseModel):
+    active_users: int  # active users in the last 30 minutes
+    per_minute: list[int]  # 30 values, oldest → newest, for the sparkline
+    by_country: list[WebCountryRow]
+
+
 class WebsiteAnalyticsResponse(BaseModel):
     status_code: int
     configured: bool  # false when GA env vars are unset — UI shows a setup hint
@@ -46,3 +69,5 @@ class WebsiteAnalyticsResponse(BaseModel):
     top_pages: list[WebPageRow] = []
     events: list[WebEventRow] = []
     countries: list[WebCountryRow] = []
+    channels: list[WebChannelRow] = []
+    realtime: WebRealtime | None = None
