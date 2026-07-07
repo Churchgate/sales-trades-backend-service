@@ -17,6 +17,7 @@ import anyio
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.schemas.web_analytics import (
+    WebCountryRow,
     WebEventRow,
     WebKpi,
     WebPageRow,
@@ -101,8 +102,15 @@ def _run_blocking(days: int, settings: Settings) -> WebsiteAnalyticsResponse:
         order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="eventCount"), desc=True)],
         limit=10,
     )
+    countries = RunReportRequest(
+        property=prop, date_ranges=[current],
+        dimensions=[Dimension(name="country")],
+        metrics=[metric("activeUsers")],
+        order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="activeUsers"), desc=True)],
+        limit=10,
+    )
     resp = client.batch_run_reports(
-        BatchRunReportsRequest(property=prop, requests=[summary, series, pages, events])
+        BatchRunReportsRequest(property=prop, requests=[summary, series, pages, events, countries])
     )
 
     # -- summary: two date-range rows (GA adds a `dateRange` dimension) --
@@ -141,9 +149,17 @@ def _run_blocking(days: int, settings: Settings) -> WebsiteAnalyticsResponse:
         )
         for row in resp.reports[3].rows
     ]
+    country_rows = [
+        WebCountryRow(
+            country=row.dimension_values[0].value,
+            active_users=int(float(row.metric_values[0].value)),
+        )
+        for row in resp.reports[4].rows
+    ]
     return WebsiteAnalyticsResponse(
         status_code=200, configured=True, days=days, kpi=kpi,
         timeseries=timeseries, top_pages=top_pages, events=event_rows,
+        countries=country_rows,
     )
 
 

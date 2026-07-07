@@ -48,6 +48,10 @@ class _FakeClient:
                 _Row(["page_view"], ["182"]),
                 _Row(["form_start"], ["3"]),
             ]),
+            _Report([  # countries
+                _Row(["Nigeria"], ["120"]),
+                _Row(["United Kingdom"], ["9"]),
+            ]),
         ])
 
 
@@ -73,3 +77,4 @@ async def test_website_analytics_maps_report(monkeypatch) -> None:
     assert result.timeseries[1].sessions == 55
     assert (result.top_pages[0].path, result.top_pages[0].views) == ("/", 123)
     assert (result.events[0].name, result.events[0].count) == ("page_view", 182)
+    assert (result.countries[0].country, result.countries[0].active_users) == ("Nigeria", 120)

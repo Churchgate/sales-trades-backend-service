@@ -31,6 +31,11 @@ class WebEventRow(BaseModel):
     count: int
 
 
+class WebCountryRow(BaseModel):
+    country: str
+    active_users: int
+
+
 class WebsiteAnalyticsResponse(BaseModel):
     status_code: int
     configured: bool  # false when GA env vars are unset — UI shows a setup hint
@@ -40,3 +45,4 @@ class WebsiteAnalyticsResponse(BaseModel):
     timeseries: list[WebTimePoint] = []
     top_pages: list[WebPageRow] = []
     events: list[WebEventRow] = []
+    countries: list[WebCountryRow] = []
