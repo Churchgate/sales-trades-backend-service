@@ -141,7 +141,9 @@ async def capture_lead(
             lead = await pack_delivery.deliver_pack(session, lead, campaign)
         if created and lead.inspection_requested:
             lead = await pack_delivery.deliver_viewing(session, lead, campaign)
-        if created:
+        # Per-lead staff notification is off by default (email-volume) — set
+        # config["lead_notification"] = true on a campaign + re-seed to re-enable.
+        if created and (campaign.config or {}).get("lead_notification"):
             await campaign_mailer.send_lead_notification(lead, campaign)
 
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
