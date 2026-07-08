@@ -37,6 +37,8 @@ from app.schemas.responses import (
     TrendPoint,
     TrendsResponse,
 )
+from app.schemas.web_analytics import WebsiteAnalyticsResponse
+from app.services import web_analytics
 
 # Authentication is shared across every analytics route at the router level; read
 # endpoints take OwnerScopeDep so `rep` users are scoped to their own deals.
@@ -69,6 +71,16 @@ def _to_health(row: dict[str, object]) -> BusinessLineHealth:
         lost_deals=row["lost_deals"],
         win_rate=_win_rate(row["won_deals"], row["lost_deals"]),
     )
+
+
+@router.get("/website")
+async def website_analytics(
+    days: Annotated[int, Query(ge=1, le=365)] = 28,
+) -> WebsiteAnalyticsResponse:
+    """GA4 website traffic for the last `days` days vs the preceding window: KPI
+    totals, a daily series, top pages, and top events. Reads the GA4 Data API (not
+    the DB); returns configured=false when GA env vars are unset. Auth at router level."""
+    return await web_analytics.get_website_analytics(days)
 
 
 @router.get("/data-freshness")
