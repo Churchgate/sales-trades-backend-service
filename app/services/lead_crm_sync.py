@@ -18,10 +18,18 @@ from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.freshsales.client import FreshsalesClient
 from app.models.campaign import Campaign
-from app.models.lead import CRM_FAILED, CRM_SKIPPED, CRM_SYNCED, Lead
+from app.models.lead import CRM_FAILED, CRM_SKIPPED, CRM_SYNCED, PACK_SENT, Lead
 from app.repositories import campaigns_repo, leads_repo
 
 logger = get_logger(__name__)
+
+# NOG Energy Week is the only campaign with its own Freshsales "Source" option and
+# "Lifecycle Stage-NOG Week" field, so these three are scoped to it (not the website
+# campaign). The Source dropdown is a system field: Freshsales requires the numeric
+# choice id (a plain string/label 400s), verified live via
+# GET /crm/sales/api/selector/lead_sources — this id is the "NOG-Week-2026" choice.
+_NOG_2026_SLUG = "nog-2026"
+_NOG_LEAD_SOURCE_ID = 17001007403
 
 
 def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
@@ -45,6 +53,13 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
             "cf_source": lead.source,
         },
     }
+    if campaign.slug == _NOG_2026_SLUG:
+        pack_sent = lead.pack_delivery_status == PACK_SENT
+        contact["lead_source_id"] = _NOG_LEAD_SOURCE_ID
+        contact["custom_field"]["cf_collateral_sent"] = "Yes" if pack_sent else "No"
+        contact["custom_field"]["cf_lifecycle_stagenog_week"] = (
+            "Nurturing" if pack_sent else "New"
+        )
     return {"unique_identifier": {"emails": lead.email}, "contact": contact}
 
 
