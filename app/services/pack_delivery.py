@@ -123,6 +123,8 @@ async def deliver_pack(
         text=text,
         settings=settings,
         cc=[settings.campaign_cc_email] if settings.campaign_cc_email else None,
+        lead_id=lead.id,
+        email_kind="pack",
     )
     if sent:
         lead.pack_delivery_status = PACK_SENT

@@ -107,3 +107,14 @@ class Lead(SQLModel, table=True):
         default=None, sa_column=Column(ARRAY(String))
     )
     pack_delivery_error: str | None = None
+
+    # Engagement, from SendGrid Event Webhook (services/email_event_ingest.py). A
+    # rollup for dashboard convenience; the full per-event history (incl. which
+    # document each click was for) lives in the email_events table.
+    pack_opened_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    pack_opened_count: int = Field(default=0)
+    pack_clicked_materials: list[str] | None = Field(
+        default=None, sa_column=Column(ARRAY(String))
+    )

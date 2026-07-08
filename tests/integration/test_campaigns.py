@@ -426,6 +426,7 @@ async def test_deliver_pack_sends_only_materials_with_assets(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sent.update(to_email=to_email, subject=subject, html=html, text=text,
                      from_email=from_email, from_name=from_name)
@@ -458,6 +459,7 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sent.update(html=html, text=text)
         return True
@@ -492,6 +494,7 @@ async def test_pack_email_is_source_aware_and_uses_display_meta(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         _fake_send.last = {"html": html, "text": text}
         return True
@@ -631,6 +634,7 @@ async def test_recapture_does_not_resend_pack(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sends.append(to_email)
         return True
@@ -674,6 +678,7 @@ async def test_deliver_pack_includes_logo_when_configured(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         _fake_send.last = {"html": html, "text": text}
         return True
@@ -743,6 +748,7 @@ async def test_deliver_pending_picks_up_pending_packs(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         return True
 
@@ -875,6 +881,7 @@ async def test_deliver_pack_ccs_configured_address(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         seen["cc"] = cc
         return True
@@ -945,6 +952,7 @@ async def test_resend_lead_pack_redelivers_over_http(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sends.append(to_email)
         return True
@@ -996,6 +1004,7 @@ async def test_resend_viewing_lead_resends_viewing_email(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sends.append(to_email)
         return True
@@ -1054,3 +1063,67 @@ async def test_resend_lead_pack_wrong_campaign_404(
         res = await c.post(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}/resend-pack")
     assert res.status_code == 404
     assert other.id != campaign.id
+
+
+# --- send_campaign_email tracking payload ---
+
+
+async def test_send_campaign_email_enables_tracking_and_sets_custom_args() -> None:
+    """Open/click tracking must be explicitly requested (not left to account
+    defaults) and lead_id/email_kind must ride along as custom_args, or the
+    SendGrid Event Webhook has nothing to correlate opens/clicks back to."""
+    from app.services.campaign_mailer import send_campaign_email
+
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    captured: dict = {}
+
+    with respx.mock(base_url="https://api.sendgrid.com") as router:
+        def _capture(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(202)
+
+        router.post("/v3/mail/send").mock(side_effect=_capture)
+        sent = await send_campaign_email(
+            to_email="ada@example.com",
+            subject="Your WTC Abuja Digital Pack",
+            html="<p>hi</p>",
+            text="hi",
+            settings=enabled,
+            lead_id=42,
+            email_kind="pack",
+        )
+
+    assert sent is True
+    body = captured["body"]
+    assert body["tracking_settings"]["open_tracking"]["enable"] is True
+    assert body["tracking_settings"]["click_tracking"]["enable"] is True
+    assert body["custom_args"] == {"lead_id": "42", "email_kind": "pack"}
+
+
+async def test_send_campaign_email_omits_custom_args_without_lead_id() -> None:
+    """The internal staff notification isn't sent to a lead's inbox — it shouldn't
+    carry a lead_id that would misattribute its opens to that lead."""
+    from app.services.campaign_mailer import send_campaign_email
+
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    captured: dict = {}
+
+    with respx.mock(base_url="https://api.sendgrid.com") as router:
+        def _capture(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(202)
+
+        router.post("/v3/mail/send").mock(side_effect=_capture)
+        await send_campaign_email(
+            to_email="staff@wtcabuja.com",
+            subject="New Lead",
+            html="<p>hi</p>",
+            text="hi",
+            settings=enabled,
+        )
+
+    assert "custom_args" not in captured["body"]

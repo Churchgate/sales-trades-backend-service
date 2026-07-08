@@ -101,6 +101,10 @@ class LeadOut(BaseModel):
     pack_delivery_error: str | None = None
     pack_delivered_at: datetime | None = None
     pack_delivered_materials: list[str] | None = None
+    # Engagement (SendGrid Event Webhook — services/email_event_ingest.py).
+    pack_opened_at: datetime | None = None
+    pack_opened_count: int = 0
+    pack_clicked_materials: list[str] | None = None
     # Did they request a pack and did we deliver it? (dashboard request→delivery check)
     pack_fulfilled: bool = False
     # 0–100 intent score for ranking leads (see services/lead_scoring.py).

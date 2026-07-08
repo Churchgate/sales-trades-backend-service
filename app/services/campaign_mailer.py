@@ -95,6 +95,8 @@ async def send_campaign_email(
     from_email: str | None = None,
     from_name: str | None = None,
     cc: list[str] | None = None,
+    lead_id: int | None = None,
+    email_kind: str | None = None,
 ) -> bool:
     """Send one campaign email via SendGrid (WTC Abuja account). Returns True on success.
 
@@ -103,6 +105,11 @@ async def send_campaign_email(
     event_mail_from_email/event_mail_from_name from settings. `cc` recipients get
     a copy (SendGrid rejects a cc that duplicates the to address, so those are
     dropped).
+
+    `lead_id`/`email_kind` (e.g. "pack"/"viewing") are set as SendGrid custom_args
+    so the Event Webhook (open/click tracking, services/email_event_ingest.py) can
+    attribute engagement back to this exact lead/send — omit for emails not sent to
+    a lead's own inbox (e.g. the internal staff notification).
     """
     settings = settings or get_settings()
 
@@ -124,7 +131,7 @@ async def send_campaign_email(
     if cc_recipients:
         personalization["cc"] = [{"email": addr} for addr in cc_recipients]
 
-    payload = {
+    payload: dict = {
         "personalizations": [personalization],
         "from": {"email": sender_email, "name": sender_name},
         "subject": subject,
@@ -132,7 +139,16 @@ async def send_campaign_email(
             {"type": "text/plain", "value": text},
             {"type": "text/html", "value": html},
         ],
+        "tracking_settings": {
+            "click_tracking": {"enable": True, "enable_text": False},
+            "open_tracking": {"enable": True},
+        },
     }
+    if lead_id is not None:
+        custom_args = {"lead_id": str(lead_id)}
+        if email_kind:
+            custom_args["email_kind"] = email_kind
+        payload["custom_args"] = custom_args
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -744,6 +760,8 @@ async def send_viewing_booking(
             text=text,
             settings=settings,
             cc=[settings.campaign_cc_email] if settings.campaign_cc_email else None,
+            lead_id=lead.id,
+            email_kind="viewing",
         )
     except Exception:
         logger.exception("viewing booking email failed", lead_id=lead.id)
