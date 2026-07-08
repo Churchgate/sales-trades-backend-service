@@ -634,6 +634,7 @@ async def test_recapture_does_not_resend_pack(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sends.append(to_email)
         return True

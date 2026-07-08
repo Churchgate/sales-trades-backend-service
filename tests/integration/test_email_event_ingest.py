@@ -140,6 +140,31 @@ async def test_ingest_skips_events_without_lead_id(db_session: AsyncSession) -> 
     assert rows == []
 
 
+async def test_ingest_ignores_cc_recipient_engagement(db_session: AsyncSession) -> None:
+    """The pack is CC'd to the team; a CC recipient opening their copy carries the
+    same lead_id but must NOT count as the lead opening their own pack."""
+    await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())
+
+    cc_open = _open_event(lead.id, sg_event_id="evt-cc")
+    cc_open["email"] = "enquiries@wtcabuja.com"  # the CC address, not the lead's
+    processed = await email_event_ingest.ingest_events(db_session, [cc_open])
+    assert processed == 0
+
+    await db_session.refresh(lead)
+    assert lead.pack_opened_count == 0
+    rows = (await db_session.execute(select(EmailEvent))).scalars().all()
+    assert rows == []
+
+
+async def test_ingest_skips_event_for_deleted_lead(db_session: AsyncSession) -> None:
+    """A lead_id that no longer exists (lead deleted since send) is dropped, not 500."""
+    processed = await email_event_ingest.ingest_events(
+        db_session, [_open_event(999999, sg_event_id="evt-ghost")]
+    )
+    assert processed == 0
+
+
 async def test_ingest_skips_untracked_event_types(db_session: AsyncSession) -> None:
     await _make_campaign(db_session)
     lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())

@@ -29,6 +29,7 @@ from app.models.email_event import (
     EVENT_OPEN,
     EmailEvent,
 )
+from app.models.lead import Lead
 from app.repositories import campaigns_repo, email_events_repo, leads_repo
 
 logger = get_logger(__name__)
@@ -107,6 +108,17 @@ async def _ingest_one(session: AsyncSession, evt: dict[str, Any]) -> bool:
         return False  # no custom_args -> can't attribute (e.g. pre-tracking sends)
     lead_id = int(lead_id_raw)
 
+    lead = await leads_repo.get(session, lead_id)
+    if lead is None:
+        return False  # lead deleted since send — nothing to attribute to
+
+    # A pack email is CC'd to the team (campaign_cc_email); SendGrid tracking is
+    # per-message, so the CC recipient's own opens/clicks carry the same lead_id.
+    # Only the lead's own engagement counts — drop events for any other recipient.
+    recipient = (evt.get("email") or "").strip().lower()
+    if recipient and recipient != lead.email.lower():
+        return False
+
     url = evt.get("url") if event_type == EVENT_CLICK else None
     material = await _resolve_material(session, url) if url else None
     occurred_at = (
@@ -130,20 +142,17 @@ async def _ingest_one(session: AsyncSession, evt: dict[str, Any]) -> bool:
     )
 
     if event_type in (EVENT_OPEN, EVENT_CLICK):
-        await _bump_lead_rollup(session, lead_id, event_type, material, occurred_at)
+        await _bump_lead_rollup(session, lead, event_type, material, occurred_at)
     return True
 
 
 async def _bump_lead_rollup(
     session: AsyncSession,
-    lead_id: int,
+    lead: Lead,
     event_type: str,
     material: str | None,
     occurred_at: datetime,
 ) -> None:
-    lead = await leads_repo.get(session, lead_id)
-    if lead is None:
-        return
     changed = False
     if event_type == EVENT_OPEN:
         if lead.pack_opened_at is None:
