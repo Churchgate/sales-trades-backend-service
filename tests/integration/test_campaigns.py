@@ -618,6 +618,47 @@ async def test_capture_with_inspection_sends_viewing_email(
     assert resp2.lead.pack_delivery_status == "not_requested"  # untouched
 
 
+async def test_recapture_does_not_resend_pack(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An idempotent re-submit (offline-queue retry / double-tap) of an already-
+    delivered lead must NOT email the visitor again (event duplicate-email bug)."""
+    from app.api.v1.endpoints import campaigns as campaigns_api
+    from app.services import pack_delivery
+
+    await _make_campaign(db_session)
+    sends: list = []
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+    ):
+        sends.append(to_email)
+        return True
+
+    async def _noop_notify(lead, campaign, settings=None):
+        return None
+
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+    monkeypatch.setattr(
+        pack_delivery, "get_settings", lambda: Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    )
+    monkeypatch.setattr(campaigns_api.campaign_mailer, "send_lead_notification", _noop_notify)
+
+    body = _lead(email="dup@example.com", requested_materials=["Corporate Prospectus"])
+    r1 = await campaigns_api.capture_lead("nog-2026", body, db_session)
+    assert r1.lead.pack_delivery_status == "sent"
+    assert sends == ["dup@example.com"]  # delivered once
+
+    # identical re-submit — must not resend
+    r2 = await campaigns_api.capture_lead(
+        "nog-2026",
+        _lead(email="dup@example.com", requested_materials=["Corporate Prospectus"]),
+        db_session,
+    )
+    assert r2.lead.pack_delivery_status == "sent"
+    assert sends == ["dup@example.com"]  # still one send — no duplicate
+
+
 async def test_deliver_pack_includes_logo_when_configured(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

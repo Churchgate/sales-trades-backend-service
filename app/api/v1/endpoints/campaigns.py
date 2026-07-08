@@ -126,7 +126,7 @@ async def capture_lead(
     scheduled `pack_delivery_job` is the backstop for anything not yet sent.
     """
     try:
-        lead = await lead_service.capture_lead(session, slug.strip(), body)
+        lead, created = await lead_service.capture_lead_created(session, slug.strip(), body)
     except lead_service.CampaignNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except lead_service.CampaignInactiveError as exc:
@@ -134,11 +134,15 @@ async def capture_lead(
 
     campaign = await campaigns_repo.get(session, lead.campaign_id)
     if campaign is not None:
+        # Pack delivery is idempotent via pack_delivery_status (only PENDING when there's
+        # something new to send). The viewing + notification emails have no such status,
+        # so gate them on `created` — otherwise an idempotent re-submit re-emails everyone.
         if lead.pack_delivery_status == PACK_PENDING:
             lead = await pack_delivery.deliver_pack(session, lead, campaign)
-        if lead.inspection_requested:
+        if created and lead.inspection_requested:
             lead = await pack_delivery.deliver_viewing(session, lead, campaign)
-        await campaign_mailer.send_lead_notification(lead, campaign)
+        if created:
+            await campaign_mailer.send_lead_notification(lead, campaign)
 
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
 

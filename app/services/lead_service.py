@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.models.campaign import STATUS_ACTIVE, Campaign
-from app.models.lead import CRM_PENDING, PACK_NOT_REQUESTED, PACK_PENDING, Lead
+from app.models.lead import (
+    CRM_PENDING,
+    PACK_NOT_REQUESTED,
+    PACK_PENDING,
+    PACK_SENT,
+    Lead,
+)
 from app.repositories import campaigns_repo, leads_repo
 from app.schemas.campaigns import LeadCreateRequest
 
@@ -70,22 +76,43 @@ def _apply_payload(lead: Lead, campaign: Campaign, payload: LeadCreateRequest) -
     lead.responses = payload.responses or {}
     if payload.consent_status and lead.consent_at is None:
         lead.consent_at = payload.captured_at or datetime.now(UTC)
-    # New/updated info must be (re)pushed to the CRM.
+    # New/updated info must be (re)pushed to the CRM (upsert is idempotent by email).
     lead.crm_sync_status = CRM_PENDING
     lead.crm_error = None
-    # Requested materials must be (re)delivered. The delivery service decides what
-    # is actually deliverable (real materials with a configured asset); here we
-    # just flag that there's something to attempt vs nothing at all.
-    lead.pack_delivery_status = (
-        PACK_PENDING if payload.requested_materials else PACK_NOT_REQUESTED
-    )
-    lead.pack_delivery_error = None
+    # NB: pack_delivery_status is set by the caller via _next_pack_status — it must NOT
+    # be reset here, or an idempotent re-submit (offline-queue retry, double-tap) would
+    # flip an already-delivered pack back to PENDING and email the visitor again.
 
 
-async def capture_lead(
+def _next_pack_status(
+    existing: Lead | None, prev_status: str | None, prev_materials: set[str],
+    payload: LeadCreateRequest,
+) -> str:
+    """Idempotent pack-delivery status for a (re)captured lead.
+
+    A re-submit of the same materials that were already delivered stays `sent` (no
+    resend). Genuinely new/changed materials — or a prior failure — go `pending` so
+    the delivery job/endpoint (re)attempts. Nothing requested → `not_requested`,
+    unless a pack/viewing was already delivered (keep that `sent` marker intact).
+    """
+    new_materials = set(payload.requested_materials or [])
+    if not new_materials:
+        if existing is not None and prev_status == PACK_SENT:
+            return PACK_SENT
+        return PACK_NOT_REQUESTED
+    if existing is not None and prev_status == PACK_SENT and new_materials <= prev_materials:
+        return PACK_SENT
+    return PACK_PENDING
+
+
+async def capture_lead_created(
     session: AsyncSession, slug: str, payload: LeadCreateRequest
-) -> Lead:
+) -> tuple[Lead, bool]:
     """Create (or dedup-merge) a lead for the active campaign `slug`.
+
+    Returns `(lead, created)` — `created` is False for a dedup-merge of an existing
+    lead, so the caller can avoid re-sending confirmation emails on an idempotent
+    re-submit.
 
     Dedup is by (campaign_id, email) — this is the idempotency mechanism: an
     offline-queue retry of the same submission lands on the same row instead
@@ -103,14 +130,18 @@ async def capture_lead(
     campaign_id = campaign.id
     email = str(payload.email).strip().lower()
     existing = await leads_repo.get_by_campaign_email(session, campaign_id, email)
+    prev_status = existing.pack_delivery_status if existing else None
+    prev_materials = set(existing.requested_materials or []) if existing else set()
     lead = existing or Lead(campaign_id=campaign_id, email=email)
     _apply_payload(lead, campaign, payload)
+    lead.pack_delivery_status = _next_pack_status(existing, prev_status, prev_materials, payload)
+    lead.pack_delivery_error = None
 
     if existing is not None:
-        return await leads_repo.update(session, lead)
+        return await leads_repo.update(session, lead), False
 
     try:
-        return await leads_repo.create(session, lead)
+        return await leads_repo.create(session, lead), True
     except IntegrityError:
         # session.rollback() expires already-loaded instances (incl. `campaign`),
         # so re-fetch both by plain id rather than touching the stale objects.
@@ -119,5 +150,17 @@ async def capture_lead(
         if existing is None:
             raise
         campaign = await campaigns_repo.get(session, campaign_id)
+        prev_status = existing.pack_delivery_status
+        prev_materials = set(existing.requested_materials or [])
         _apply_payload(existing, campaign, payload)
-        return await leads_repo.update(session, existing)
+        existing.pack_delivery_status = _next_pack_status(
+            existing, prev_status, prev_materials, payload
+        )
+        existing.pack_delivery_error = None
+        return await leads_repo.update(session, existing), False
+
+
+async def capture_lead(session: AsyncSession, slug: str, payload: LeadCreateRequest) -> Lead:
+    """Back-compat wrapper — returns just the lead (see `capture_lead_created`)."""
+    lead, _ = await capture_lead_created(session, slug, payload)
+    return lead
