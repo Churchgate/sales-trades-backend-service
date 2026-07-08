@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # CC'd on every digital-pack email sent to a visitor, so the team gets a copy
     # of exactly what was delivered (audit/verification). Leave empty to disable.
     campaign_cc_email: str = ""
+    # Base64 ECDSA public key from SendGrid > Settings > Mail Settings > Event
+    # Webhook > Signed Event Webhook. Verifies POSTs to /webhooks/sendgrid/events
+    # actually came from SendGrid. Leave empty to accept unsigned (e.g. before the
+    # signing key is configured in SendGrid, or in dev) — logs a warning either way.
+    sendgrid_webhook_public_key: str = ""
 
     # --- Booth/stand lead capture ---
     # Management dashboard origin (CORS), if deployed separately from the API.
