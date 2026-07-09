@@ -443,6 +443,36 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert "Residence Floorplans" not in sent["html"]
 
 
+async def test_deliver_pack_reflags_synced_lead_for_crm_refresh(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pack delivered to an already-synced lead must re-queue CRM sync, so the
+    delivery-derived CRM fields (NOG Collateral Sent?/Lifecycle) refresh instead of
+    staying stale at their pre-delivery values."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(requested_materials=["Corporate Prospectus"])
+    )
+    # Simulate the stale case: lead synced to CRM before its pack went out.
+    lead.crm_sync_status = CRM_SYNCED
+    lead = await leads_repo.update(db_session, lead)
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
+    ):
+        return True
+
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+
+    result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    assert result.pack_delivery_status == "sent"
+    assert result.crm_sync_status == CRM_PENDING  # re-queued so CRM fields refresh
+
+
 async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

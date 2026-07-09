@@ -31,6 +31,8 @@ from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models.campaign import Campaign
 from app.models.lead import (
+    CRM_PENDING,
+    CRM_SYNCED,
     PACK_FAILED,
     PACK_NOT_REQUESTED,
     PACK_PENDING,
@@ -42,6 +44,17 @@ from app.repositories import campaigns_repo, leads_repo
 from app.services import campaign_mailer
 
 logger = get_logger(__name__)
+
+
+def _flag_crm_refresh(lead: Lead) -> None:
+    """A pack just reached the visitor — the CRM's delivery-derived fields
+    (e.g. NOG "Collateral Sent?"/"Lifecycle Stage", set in lead_crm_sync from
+    pack_delivery_status) are now stale. Re-queue an already-synced lead so the
+    next sync refreshes them; leaves pending/failed/skipped untouched (they'll
+    sync anyway, or sync is off)."""
+    if lead.crm_sync_status == CRM_SYNCED:
+        lead.crm_sync_status = CRM_PENDING
+        lead.crm_error = None
 
 
 def _asset_urls(value: object) -> list[str]:
@@ -131,6 +144,7 @@ async def deliver_pack(
         lead.pack_delivered_at = datetime.now(UTC)
         lead.pack_delivered_materials = [label for label, _urls in materials]
         lead.pack_delivery_error = None
+        _flag_crm_refresh(lead)
     else:
         lead.pack_delivery_status = PACK_FAILED
         lead.pack_delivery_error = "email send failed"
@@ -166,6 +180,7 @@ async def deliver_viewing(
     lead.pack_delivered_at = datetime.now(UTC)
     lead.pack_delivered_materials = [label for label, _urls in docs]
     lead.pack_delivery_error = None
+    _flag_crm_refresh(lead)
     return await leads_repo.update(session, lead)
 
 
