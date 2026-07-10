@@ -127,6 +127,9 @@ class CampaignStats(BaseModel):
     by_material: dict[str, int]
     by_source: dict[str, int]
     by_day: list[DayCount]
+    # NOG-week lifecycle stage, mirroring the CRM field lead_crm_sync sets: a lead is
+    # "Nurturing" once its digital pack is delivered, else "New".
+    by_lifecycle_stage: dict[str, int]
 
 
 # --- Responses (envelope-wrapped, like the rest of the API) ---

@@ -268,6 +268,7 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
     campaign = await _require_campaign(session, campaign_id)
     total = await leads_repo.count_for_campaign(session, campaign_id)
     synced = await leads_repo.count_synced(session, campaign_id)
+    packs = await leads_repo.count_packs_delivered(session, campaign_id)
     by_day = await leads_repo.counts_by_day(session, campaign_id, campaign.timezone)
     stats = CampaignStats(
         total_leads=total,
@@ -275,11 +276,13 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
         marketing_opt_ins=await leads_repo.count_opt_ins(session, campaign_id),
         synced_count=synced,
         unsynced_count=total - synced,
-        packs_delivered=await leads_repo.count_packs_delivered(session, campaign_id),
+        packs_delivered=packs,
         by_interest=await leads_repo.counts_by_interest(session, campaign_id),
         by_material=await leads_repo.counts_by_material(session, campaign_id),
         by_source=await leads_repo.counts_by_source(session, campaign_id),
         by_day=[DayCount(day=day, count=count) for day, count in by_day],
+        # Nurturing = pack delivered; New = everyone else. Mirrors the CRM field.
+        by_lifecycle_stage={"New": total - packs, "Nurturing": packs},
     )
     return CampaignStatsResponse(status_code=status.HTTP_200_OK, stats=stats)
 
