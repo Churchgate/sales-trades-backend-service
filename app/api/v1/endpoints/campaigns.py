@@ -5,6 +5,7 @@ campaign's config and POST leads). Staff-only admin reads (list/stats/CSV/resync
 gated to admin/superadmin — the management 'how did the event go' surface.
 """
 
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -12,8 +13,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from app.api.dependencies import SessionDep, require_role
 from app.models.campaign import Campaign
 from app.models.lead import PACK_PENDING, Lead
-from app.repositories import campaigns_repo, leads_repo
+from app.repositories import campaigns_repo, contact_activity_repo, leads_repo
 from app.schemas.campaigns import (
+    ActivityOwnerSummary,
+    ActivityRow,
+    CampaignActivities,
+    CampaignActivitiesResponse,
     CampaignCreateRequest,
     CampaignDetailResponse,
     CampaignOut,
@@ -285,6 +290,66 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
         by_lifecycle_stage={"New": total - packs, "Nurturing": packs},
     )
     return CampaignStatsResponse(status_code=status.HTTP_200_OK, stats=stats)
+
+
+_ACTIVITY_KINDS = ("call", "email", "meeting", "note")
+
+
+@router.get("/{campaign_id}/activities", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+async def campaign_activities(
+    campaign_id: int,
+    session: SessionDep,
+    from_: Annotated[date | None, Query(alias="from")] = None,
+    to: Annotated[date | None, Query()] = None,
+    owner: Annotated[str | None, Query()] = None,
+    tier: Annotated[str | None, Query()] = None,
+) -> CampaignActivitiesResponse:
+    """Per-salesperson outreach (call/email/meeting/note) on this campaign's contacts,
+    over an optional [from, to] date range, optionally filtered to one owner and/or
+    prospect tier. Returns the summary, the filter options, and a capped drill-down list.
+    Data is populated by `nog_activity_sync`; this read is pure SQL over `contact_activity`."""
+    await _require_campaign(session, campaign_id)
+
+    # Default to a wide-open window; the UI supplies concrete from/to. `to` is
+    # inclusive of the whole day.
+    start = datetime.combine(from_, time.min, tzinfo=UTC) if from_ else datetime(2000, 1, 1, tzinfo=UTC)
+    end = datetime.combine(to, time.max, tzinfo=UTC) if to else datetime.now(UTC)
+
+    grouped = await contact_activity_repo.summary_by_owner(
+        session, campaign_id, start, end, owner=owner, tier=tier
+    )
+    by_owner: dict[str, ActivityOwnerSummary] = {}
+    total = 0
+    for owner_name, activity_type, count in grouped:
+        row = by_owner.setdefault(owner_name, ActivityOwnerSummary(owner_name=owner_name))
+        if activity_type in _ACTIVITY_KINDS:
+            setattr(row, activity_type, count)
+        row.total += count
+        total += count
+    summary = sorted(by_owner.values(), key=lambda r: r.total, reverse=True)
+
+    rows = await contact_activity_repo.list_activities(
+        session, campaign_id, start, end, owner=owner, tier=tier, limit=500
+    )
+    activities = CampaignActivities(
+        summary=summary,
+        owners=await contact_activity_repo.distinct_owners(session, campaign_id),
+        tiers=["Strategic", "Standard"],
+        rows=[
+            ActivityRow(
+                activity_type=r.activity_type,
+                contact_name=r.contact_name,
+                owner_name=r.owner_name,
+                prospect_tier=r.prospect_tier,
+                direction=r.direction,
+                occurred_at=r.occurred_at,
+                subject=r.subject,
+            )
+            for r in rows
+        ],
+        total=total,
+    )
+    return CampaignActivitiesResponse(status_code=status.HTTP_200_OK, activities=activities)
 
 
 @router.get(

@@ -132,6 +132,40 @@ class CampaignStats(BaseModel):
     by_lifecycle_stage: dict[str, int]
 
 
+class ActivityOwnerSummary(BaseModel):
+    """Per-salesperson activity totals over the requested window."""
+
+    owner_name: str  # rep name, or "Unassigned"
+    call: int = 0
+    email: int = 0
+    meeting: int = 0
+    note: int = 0
+    total: int = 0
+
+
+class ActivityRow(BaseModel):
+    """One activity for the drill-down list."""
+
+    activity_type: str  # call | email | meeting | note
+    contact_name: str | None = None
+    owner_name: str | None = None
+    prospect_tier: str | None = None
+    direction: str | None = None
+    occurred_at: datetime
+    subject: str | None = None
+
+
+class CampaignActivities(BaseModel):
+    """NOG Activities page payload: per-rep summary, filter options, and a capped
+    drill-down list — all for the requested date range / owner / tier."""
+
+    summary: list[ActivityOwnerSummary]
+    owners: list[str]  # filter options (owners seen, incl. "Unassigned")
+    tiers: list[str]  # ["Strategic", "Standard"]
+    rows: list[ActivityRow]
+    total: int  # total activities in range (before the drill-down cap)
+
+
 # --- Responses (envelope-wrapped, like the rest of the API) ---
 
 
@@ -154,3 +188,7 @@ class LeadsListResponse(BaseResponse):
 
 class CampaignStatsResponse(BaseResponse):
     stats: CampaignStats
+
+
+class CampaignActivitiesResponse(BaseResponse):
+    activities: CampaignActivities

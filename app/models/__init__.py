@@ -1,5 +1,6 @@
 from app.models.booking import Booking
 from app.models.campaign import Campaign
+from app.models.contact_activity import ContactActivity
 from app.models.dashboard_user import DashboardUser
 from app.models.deal import DealSnapshot
 from app.models.deal_event import DealEvent
@@ -17,6 +18,7 @@ from app.models.task import TaskSnapshot
 __all__ = [
     "Booking",
     "Campaign",
+    "ContactActivity",
     "DashboardUser",
     "DealEvent",
     "DealReason",
