@@ -315,7 +315,11 @@ async def campaign_activities(
 
     # Default to a wide-open window; the UI supplies concrete from/to. `to` is
     # inclusive of the whole day.
-    start = datetime.combine(from_, time.min, tzinfo=UTC) if from_ else datetime(2000, 1, 1, tzinfo=UTC)
+    start = (
+        datetime.combine(from_, time.min, tzinfo=UTC)
+        if from_
+        else datetime(2000, 1, 1, tzinfo=UTC)
+    )
     end = datetime.combine(to, time.max, tzinfo=UTC) if to else datetime.now(UTC)
 
     grouped = await contact_activity_repo.summary_by_owner(

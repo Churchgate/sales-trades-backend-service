@@ -65,7 +65,11 @@ async def _bucket_map(
                 f"/crm/sales/api/filtered_search/contact?page={page}",
                 {
                     "filter_rule": [
-                        {"attribute": "lead_source_id", "operator": "is_in", "value": [NOG_LEAD_SOURCE_ID]},
+                        {
+                            "attribute": "lead_source_id",
+                            "operator": "is_in",
+                            "value": [NOG_LEAD_SOURCE_ID],
+                        },
                         {"attribute": attribute, "operator": "is_in", "value": [value]},
                     ]
                 },
@@ -140,7 +144,7 @@ async def run_nog_activity_sync(
             "prospect_tier": tier_map.get(cid),
         }
 
-    for cid, lead in contacts:
+    for cid, _lead in contacts:
         base = _base(cid)
 
         conv = await client.get_contact_conversations(cid)
