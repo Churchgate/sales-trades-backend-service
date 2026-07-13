@@ -49,6 +49,22 @@ class CreateUserRequest(BaseModel):
         return v if v is None else _validate_password_strength(v)
 
 
+class UpdateUserRequest(BaseModel):
+    """Superadmin changing an existing user's role (and, for reps, their linked
+    owner). `owner_id` only applies when the new role is `rep`; it's cleared for
+    every other role, which see all deals."""
+
+    role: str
+    owner_id: int | None = None
+
+    @field_validator("role")
+    @classmethod
+    def must_be_valid_role(cls, v: str) -> str:
+        if v not in VALID_ROLES:
+            raise ValueError(f"role must be one of: {', '.join(sorted(VALID_ROLES))}")
+        return v
+
+
 class ChangePasswordRequest(BaseModel):
     """A logged-in user replacing their (possibly temporary) password."""
 

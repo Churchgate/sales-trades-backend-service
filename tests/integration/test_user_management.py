@@ -209,3 +209,59 @@ async def test_delete_self_is_rejected(client_as):
     async with client_as("superadmin", email="admin@churchgate.com") as c:
         res = await c.delete("/api/v1/admin/users/admin@churchgate.com")
     assert res.status_code == 400
+
+
+async def test_update_role_changes_role(client_as, db_session):
+    await users_repo.create_user(
+        db_session,
+        DashboardUser(email="grow@churchgate.com", role="rep", hashed_password="x"),
+    )
+    async with client_as("superadmin") as c:
+        res = await c.patch(
+            "/api/v1/admin/users/grow@churchgate.com", json={"role": "admin"}
+        )
+    assert res.status_code == 200, res.text
+    assert res.json()["user"]["role"] == "admin"
+    user = await users_repo.get_user_by_email(db_session, "grow@churchgate.com")
+    # a non-rep role carries no owner scoping
+    assert user.role == "admin" and user.owner_id is None
+
+
+async def test_update_role_rejects_invalid_role(client_as, db_session):
+    await users_repo.create_user(
+        db_session,
+        DashboardUser(email="bad@churchgate.com", role="rep", hashed_password="x"),
+    )
+    async with client_as("superadmin") as c:
+        res = await c.patch(
+            "/api/v1/admin/users/bad@churchgate.com", json={"role": "wizard"}
+        )
+    assert res.status_code == 422
+
+
+async def test_update_role_requires_superadmin(client_as, db_session):
+    await users_repo.create_user(
+        db_session,
+        DashboardUser(email="keep2@churchgate.com", role="rep", hashed_password="x"),
+    )
+    async with client_as("admin") as c:
+        res = await c.patch(
+            "/api/v1/admin/users/keep2@churchgate.com", json={"role": "admin"}
+        )
+    assert res.status_code == 403
+
+
+async def test_update_own_role_is_rejected(client_as):
+    async with client_as("superadmin", email="admin@churchgate.com") as c:
+        res = await c.patch(
+            "/api/v1/admin/users/admin@churchgate.com", json={"role": "rep"}
+        )
+    assert res.status_code == 400
+
+
+async def test_update_unknown_user_is_404(client_as):
+    async with client_as("superadmin") as c:
+        res = await c.patch(
+            "/api/v1/admin/users/nobody@churchgate.com", json={"role": "admin"}
+        )
+    assert res.status_code == 404

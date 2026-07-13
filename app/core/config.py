@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # CSV-first (the guaranteed path) and flip this on once verified live.
     freshsales_lead_sync_enabled: bool = False
     lead_crm_sync_interval_minutes: int = 10
+    # NOG per-contact activity sync (calls/emails/meetings/notes for the NOG
+    # Activities page). Heavy per-contact fan-out over ~430 contacts, so it runs
+    # once nightly. Off by default — flip on once the contacts are assigned/synced.
+    nog_activity_sync_enabled: bool = False
     # Backstop sweep for digital-pack emails not delivered inline at capture
     # (e.g. captured offline, or a transient send failure). Capture also attempts
     # delivery inline so most packs go out immediately; this just retries the rest.

@@ -96,3 +96,31 @@ def contact_upsert() -> str:
     Body: {"unique_identifier": {"email": ...}, "contact": {...}}. Response wraps
     the record under `contact`."""
     return "/crm/sales/api/contacts/upsert"
+
+
+# --- Contact activity (read — NOG per-contact activity sync) ---
+
+
+def contact_detail(contact_id: int) -> str:
+    """Full contact record (incl. owner_id + custom_field). `include=owner` sideloads
+    the owner. Response wraps the record under `contact`."""
+    return f"/crm/sales/api/contacts/{contact_id}?include=owner"
+
+
+def contact_conversations(contact_id: int) -> str:
+    """Contact email conversations. Like `deal_conversations`, served WITHOUT the
+    `/api` segment (the `/api/...` form 404s, verified live). Response wraps the list
+    under `email_conversations`."""
+    return f"/crm/sales/contacts/{contact_id}/conversations/all"
+
+
+def contact_notes(contact_id: int) -> str:
+    """Notes on a contact. Response wraps the list under `notes`."""
+    return f"/crm/sales/api/contacts/{contact_id}/notes"
+
+
+def sales_activities(page: int = 1) -> str:
+    """Logged sales activities (calls/meetings) across the account, paginated.
+    `include=targetable,owner` sideloads the linked record and the activity owner.
+    Response wraps the list under `sales_activities`."""
+    return f"/crm/sales/api/sales_activities?include=targetable,owner&page={page}"

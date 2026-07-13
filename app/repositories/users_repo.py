@@ -24,6 +24,16 @@ async def set_password(
     return user
 
 
+async def update_user(
+    session: AsyncSession, user: DashboardUser, *, role: str, owner_id: int | None
+) -> DashboardUser:
+    user.role = role
+    user.owner_id = owner_id
+    session.add(user)
+    await session.commit()
+    return user
+
+
 async def delete_user(session: AsyncSession, user: DashboardUser) -> None:
     await session.delete(user)
     await session.commit()

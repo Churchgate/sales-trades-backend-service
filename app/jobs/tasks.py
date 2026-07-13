@@ -9,6 +9,7 @@ from app.core.scheduler import (
     LOCK_KEY_DEAL_SYNC,
     LOCK_KEY_EMAIL_SYNC,
     LOCK_KEY_LEAD_CRM_SYNC,
+    LOCK_KEY_NOG_ACTIVITY_SYNC,
     LOCK_KEY_PACK_DELIVERY,
     LOCK_KEY_REFERENCE_SYNC,
     LOCK_KEY_TASK_SYNC,
@@ -20,6 +21,7 @@ from app.services import (
     deal_sync,
     email_sync,
     lead_crm_sync,
+    nog_activity_sync,
     pack_delivery,
     reference_sync,
     task_sync,
@@ -89,3 +91,12 @@ async def pack_delivery_job(state: State) -> None:
         logger.info("pack delivery job done", delivered=delivered)
 
     await run_with_advisory_lock(LOCK_KEY_PACK_DELIVERY, "pack_delivery", _run)
+
+
+async def nog_activity_sync_job(state: State) -> None:
+    async def _run() -> None:
+        async with session_scope() as session, FreshsalesClient() as client:
+            counters = await nog_activity_sync.run_nog_activity_sync(session, client)
+        logger.info("nog activity sync job done", **counters)
+
+    await run_with_advisory_lock(LOCK_KEY_NOG_ACTIVITY_SYNC, "nog_activity_sync", _run)
