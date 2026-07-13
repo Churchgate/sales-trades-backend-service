@@ -274,6 +274,7 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
     total = await leads_repo.count_for_campaign(session, campaign_id)
     synced = await leads_repo.count_synced(session, campaign_id)
     packs = await leads_repo.count_packs_delivered(session, campaign_id)
+    reconnect = await leads_repo.count_reconnect_sent(session, campaign_id)
     by_day = await leads_repo.counts_by_day(session, campaign_id, campaign.timezone)
     stats = CampaignStats(
         total_leads=total,
@@ -282,6 +283,8 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
         synced_count=synced,
         unsynced_count=total - synced,
         packs_delivered=packs,
+        emails_sent=packs + reconnect,
+        emails_by_kind={"Packs": packs, "Reconnect": reconnect},
         by_interest=await leads_repo.counts_by_interest(session, campaign_id),
         by_material=await leads_repo.counts_by_material(session, campaign_id),
         by_source=await leads_repo.counts_by_source(session, campaign_id),

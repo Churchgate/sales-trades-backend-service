@@ -123,6 +123,12 @@ class CampaignStats(BaseModel):
     synced_count: int
     unsynced_count: int
     packs_delivered: int
+    # Outbound email volume. `emails_sent` is the running total of every email sent
+    # to this campaign's leads; `emails_by_kind` breaks it out (packs/viewing
+    # confirmations vs the post-event reconnect broadcast). Someone who received a
+    # pack AND the reconnect counts once in each kind.
+    emails_sent: int
+    emails_by_kind: dict[str, int]
     by_interest: dict[str, int]
     by_material: dict[str, int]
     by_source: dict[str, int]

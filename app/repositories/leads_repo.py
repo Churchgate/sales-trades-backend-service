@@ -179,6 +179,20 @@ async def count_packs_delivered(session: AsyncSession, campaign_id: int) -> int:
     return result.scalar_one()
 
 
+async def count_reconnect_sent(session: AsyncSession, campaign_id: int) -> int:
+    """Leads that have received the post-event reconnect broadcast.
+
+    The send stamps `responses['reconnect_sent_at']` (see
+    scripts/send_nog_reconnect.py), so key-existence is the ground truth for how
+    many reconnect emails went out — independent of the SendGrid webhook."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Lead)
+        .where(Lead.campaign_id == campaign_id, Lead.responses.has_key("reconnect_sent_at"))
+    )
+    return result.scalar_one()
+
+
 async def counts_by_material(session: AsyncSession, campaign_id: int) -> dict[str, int]:
     """How many leads requested each material — the request-demand breakdown.
 
