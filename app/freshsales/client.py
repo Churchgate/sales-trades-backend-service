@@ -230,6 +230,41 @@ class FreshsalesClient:
         under `email_conversations`."""
         return await self.get(endpoints.deal_conversations(deal_id))
 
+    # --- Contact activity (NOG contacts have no deal, so pull per-contact) ---
+
+    async def get_contact_conversations(self, contact_id: int) -> dict[str, Any]:
+        """Email conversations for one contact. Like the deal variant this path omits
+        the `/api` segment; response wraps the list under `email_conversations`."""
+        return await self.get(endpoints.contact_conversations(contact_id))
+
+    async def get_contact_notes(self, contact_id: int) -> dict[str, Any]:
+        """Notes on one contact. Response wraps the list under `notes`."""
+        return await self.get(endpoints.contact_notes(contact_id))
+
+    async def get_contact(self, contact_id: int) -> dict[str, Any]:
+        """Full contact record (incl. owner_id + custom_field). Wrapped under `contact`."""
+        data = await self.get(endpoints.contact_detail(contact_id))
+        return data.get("contact", data)
+
+    async def iter_sales_activities(self) -> AsyncIterator[dict[str, Any]]:
+        """Yield every logged sales activity (calls / meetings), paginating via
+        meta.total. `include=targetable,owner` sideloads which contact/deal it's on
+        and the activity owner. Response wraps the list under `sales_activities`."""
+        page = 1
+        seen = 0
+        while True:
+            body = await self.get(endpoints.sales_activities(page=page))
+            activities = body.get("sales_activities", [])
+            if not activities:
+                break
+            for activity in activities:
+                yield activity
+            seen += len(activities)
+            total = body.get("meta", {}).get("total")
+            if total is not None and seen >= total:
+                break
+            page += 1
+
     # --- Timeline (for backfill) ---
 
     async def paginate_timeline(self, deal_id: int) -> AsyncIterator[dict[str, Any]]:

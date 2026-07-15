@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # upsert dedups by deal_id so any overlap is harmless. Comma-separated.
     freshsales_deal_view_ids: str = "17001462746,17001462752,17001462751"
 
+    # --- Google Analytics (GA4 Data API) ---
+    # Numeric GA4 property id (Admin → Property settings), not the G-XXXX tag id.
+    ga_property_id: str = ""
+    # The service-account key JSON, as a raw string (secret). Empty disables the
+    # website-analytics panel (endpoint returns configured=false).
+    ga_service_account_json: str = ""
+
     # --- Frontend ---
     frontend_base_url: str = "http://localhost:3000"
 
@@ -61,6 +68,11 @@ class Settings(BaseSettings):
     # CC'd on every digital-pack email sent to a visitor, so the team gets a copy
     # of exactly what was delivered (audit/verification). Leave empty to disable.
     campaign_cc_email: str = ""
+    # Base64 ECDSA public key from SendGrid > Settings > Mail Settings > Event
+    # Webhook > Signed Event Webhook. Verifies POSTs to /webhooks/sendgrid/events
+    # actually came from SendGrid. Leave empty to accept unsigned (e.g. before the
+    # signing key is configured in SendGrid, or in dev) — logs a warning either way.
+    sendgrid_webhook_public_key: str = ""
 
     # --- Booth/stand lead capture ---
     # Management dashboard origin (CORS), if deployed separately from the API.
@@ -78,6 +90,10 @@ class Settings(BaseSettings):
     # CSV-first (the guaranteed path) and flip this on once verified live.
     freshsales_lead_sync_enabled: bool = False
     lead_crm_sync_interval_minutes: int = 10
+    # NOG per-contact activity sync (calls/emails/meetings/notes for the NOG
+    # Activities page). Heavy per-contact fan-out over ~430 contacts, so it runs
+    # once nightly. Off by default — flip on once the contacts are assigned/synced.
+    nog_activity_sync_enabled: bool = False
     # Backstop sweep for digital-pack emails not delivered inline at capture
     # (e.g. captured offline, or a transient send failure). Capture also attempts
     # delivery inline so most packs go out immediately; this just retries the rest.

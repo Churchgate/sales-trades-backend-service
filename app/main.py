@@ -16,6 +16,7 @@ from app.jobs.tasks import (
     deal_sync_job,
     email_sync_job,
     lead_crm_sync_job,
+    nog_activity_sync_job,
     pack_delivery_job,
     reference_sync_job,
     task_sync_job,
@@ -102,6 +103,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             kwargs={"state": app.state},
             id="pack_delivery",
         )
+        # Heavy per-contact fan-out (~430 NOG contacts); run once nightly like
+        # deal_sync so it has the full night to finish. Gated by its own flag.
+        if settings.nog_activity_sync_enabled:
+            scheduler.add_job(
+                nog_activity_sync_job,
+                "cron",
+                hour=4,
+                minute=0,
+                timezone="Africa/Lagos",
+                kwargs={"state": app.state},
+                id="nog_activity_sync",
+            )
         scheduler.start()
         logger.info("scheduler started")
 

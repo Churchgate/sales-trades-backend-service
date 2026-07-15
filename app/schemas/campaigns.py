@@ -101,6 +101,10 @@ class LeadOut(BaseModel):
     pack_delivery_error: str | None = None
     pack_delivered_at: datetime | None = None
     pack_delivered_materials: list[str] | None = None
+    # Engagement (SendGrid Event Webhook — services/email_event_ingest.py).
+    pack_opened_at: datetime | None = None
+    pack_opened_count: int = 0
+    pack_clicked_materials: list[str] | None = None
     # Did they request a pack and did we deliver it? (dashboard request→delivery check)
     pack_fulfilled: bool = False
     # 0–100 intent score for ranking leads (see services/lead_scoring.py).
@@ -119,10 +123,53 @@ class CampaignStats(BaseModel):
     synced_count: int
     unsynced_count: int
     packs_delivered: int
+    # Outbound email volume. `emails_sent` is the running total of every email sent
+    # to this campaign's leads; `emails_by_kind` breaks it out (packs/viewing
+    # confirmations vs the post-event reconnect broadcast). Someone who received a
+    # pack AND the reconnect counts once in each kind.
+    emails_sent: int
+    emails_by_kind: dict[str, int]
     by_interest: dict[str, int]
     by_material: dict[str, int]
     by_source: dict[str, int]
     by_day: list[DayCount]
+    # NOG-week lifecycle stage, mirroring the CRM field lead_crm_sync sets: a lead is
+    # "Nurturing" once its digital pack is delivered, else "New".
+    by_lifecycle_stage: dict[str, int]
+
+
+class ActivityOwnerSummary(BaseModel):
+    """Per-salesperson activity totals over the requested window."""
+
+    owner_name: str  # rep name, or "Unassigned"
+    call: int = 0
+    email: int = 0
+    meeting: int = 0
+    note: int = 0
+    total: int = 0
+
+
+class ActivityRow(BaseModel):
+    """One activity for the drill-down list."""
+
+    activity_type: str  # call | email | meeting | note
+    contact_name: str | None = None
+    owner_name: str | None = None
+    prospect_tier: str | None = None
+    direction: str | None = None
+    occurred_at: datetime
+    subject: str | None = None
+
+
+class CampaignActivities(BaseModel):
+    """NOG Activities page payload: per-rep summary, filter options, and a capped
+    drill-down list — all for the requested date range / owner / tier."""
+
+    summary: list[ActivityOwnerSummary]
+    owners: list[str]  # filter options (owners seen, incl. "Unassigned")
+    tiers: list[str]  # ["Strategic", "Standard"]
+    rows: list[ActivityRow]
+    total: int  # total activities in range (before the drill-down cap)
 
 
 # --- Responses (envelope-wrapped, like the rest of the API) ---
@@ -147,3 +194,7 @@ class LeadsListResponse(BaseResponse):
 
 class CampaignStatsResponse(BaseResponse):
     stats: CampaignStats
+
+
+class CampaignActivitiesResponse(BaseResponse):
+    activities: CampaignActivities

@@ -28,6 +28,8 @@ _TestSessionFactory = async_sessionmaker(bind=_test_engine, expire_on_commit=Fal
 # Truncate order respects FK references (deals_snapshot/stages -> pipelines, etc.)
 # CASCADE handles the rest.
 _TABLES = (
+    "contact_activity",
+    "email_events",
     "leads",
     "campaigns",
     "bookings",

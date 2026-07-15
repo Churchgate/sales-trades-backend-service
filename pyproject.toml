@@ -20,6 +20,7 @@ dependencies = [
     "pyjwt>=2.10.0",
     "structlog>=24.4.0",
     "greenlet>=3.5.1",
+    "google-analytics-data>=0.23.0",
 ]
 
 [project.optional-dependencies]

@@ -95,6 +95,8 @@ async def send_campaign_email(
     from_email: str | None = None,
     from_name: str | None = None,
     cc: list[str] | None = None,
+    lead_id: int | None = None,
+    email_kind: str | None = None,
 ) -> bool:
     """Send one campaign email via SendGrid (WTC Abuja account). Returns True on success.
 
@@ -103,6 +105,11 @@ async def send_campaign_email(
     event_mail_from_email/event_mail_from_name from settings. `cc` recipients get
     a copy (SendGrid rejects a cc that duplicates the to address, so those are
     dropped).
+
+    `lead_id`/`email_kind` (e.g. "pack"/"viewing") are set as SendGrid custom_args
+    so the Event Webhook (open/click tracking, services/email_event_ingest.py) can
+    attribute engagement back to this exact lead/send — omit for emails not sent to
+    a lead's own inbox (e.g. the internal staff notification).
     """
     settings = settings or get_settings()
 
@@ -124,7 +131,7 @@ async def send_campaign_email(
     if cc_recipients:
         personalization["cc"] = [{"email": addr} for addr in cc_recipients]
 
-    payload = {
+    payload: dict = {
         "personalizations": [personalization],
         "from": {"email": sender_email, "name": sender_name},
         "subject": subject,
@@ -132,7 +139,16 @@ async def send_campaign_email(
             {"type": "text/plain", "value": text},
             {"type": "text/html", "value": html},
         ],
+        "tracking_settings": {
+            "click_tracking": {"enable": True, "enable_text": False},
+            "open_tracking": {"enable": True},
+        },
     }
+    if lead_id is not None:
+        custom_args = {"lead_id": str(lead_id)}
+        if email_kind:
+            custom_args["email_kind"] = email_kind
+        payload["custom_args"] = custom_args
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -744,7 +760,117 @@ async def send_viewing_booking(
             text=text,
             settings=settings,
             cc=[settings.campaign_cc_email] if settings.campaign_cc_email else None,
+            lead_id=lead.id,
+            email_kind="viewing",
         )
     except Exception:
         logger.exception("viewing booking email failed", lead_id=lead.id)
+        return False
+
+
+# ── Post-event "reconnect" broadcast (to lead) ────────────────────────────────
+# A one-off follow-up to everyone captured at an event: a short recap (a single
+# hosted image in the body — no attachment) plus an invitation to book a tour.
+# Sent by scripts/send_nog_reconnect.py, not by any capture flow or job.
+
+
+def build_reconnect_email(
+    lead: Lead, campaign: Campaign, image_url: str
+) -> tuple[str, str, str]:
+    """(subject, html, text) for the post-event reconnect email sent to the visitor.
+
+    The "recap" is a single hosted image dropped inline in the body (`image_url`),
+    not an attachment. Deliberately minimal — no hero banner and no footer strip —
+    because the recap image is itself a fully-branded graphic (its own WTC header,
+    stats, and footer with contact/site), so the shell chrome would only duplicate
+    it. Just a personal greeting + short copy on a white card, then the graphic.
+    """
+    first = (lead.first_name or "").strip()
+    greeting = f"Dear {first}," if first else "Dear guest,"
+    subject = (
+        f"Good to reconnect after NOG, {first}"
+        if first
+        else "Good to reconnect after NOG"
+    )
+
+    intro = "Thanks for stopping by the WTC Abuja stand during NOG last week."
+    recap = (
+        "Below is a short recap of the week. We would be delighted to welcome you "
+        "for a tour of WTC Abuja at your convenience. Please let us know a suitable "
+        "date and time, and we'll be happy to make the necessary arrangements."
+    )
+
+    # ── plain text ───────────────────────────────────────────────────────────
+    text = (
+        f"{greeting}\n\n{intro}\n\n{recap}\n\n"
+        f"See the recap: {image_url}\n\n"
+        "Warm regards,\nThe WTC Abuja Team\nenquiries@wtcabuja.com\n"
+    )
+
+    # ── HTML body ────────────────────────────────────────────────────────────
+    image_block = (
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'role="presentation" style="margin:8px 0 4px;"><tr><td>'
+        f'<img src="{image_url}" width="504" '
+        f'alt="World Trade Center Abuja — NOG week recap" '
+        f'style="width:100%;max-width:504px;height:auto;display:block;border:0;'
+        f'border-radius:3px;"></td></tr></table>'
+        if image_url
+        else ""
+    )
+    body_html = f"""\
+              <p style="font-family:{_SANS};font-size:15px;color:{_C_INK};line-height:1.6;margin:0 0 8px;">{greeting}</p>
+              <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:0 0 18px;">{intro}</p>
+              <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:0 0 24px;">{recap}</p>
+{image_block}
+              <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:24px 0 0;">Warm regards,<br><span style="color:{_C_INK};font-weight:600;">The WTC Abuja Team</span></p>"""
+
+    html = _HEAD + f"""\
+<body style="margin:0;padding:0;background:{_C_CREAM};">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:{_C_CREAM};">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" role="presentation" style="max-width:600px;width:100%;">
+          <tr>
+            <td style="background:#ffffff;padding:40px 48px;border-radius:4px;">
+{body_html}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body></html>"""
+    return subject, html, text
+
+
+async def send_reconnect(
+    lead: Lead,
+    campaign: Campaign,
+    image_url: str,
+    settings: Settings | None = None,
+    cc: list[str] | None = None,
+) -> bool:
+    """Best-effort post-event reconnect email to the visitor. Never raises.
+
+    `cc` copies each send to the given address(es). On a bulk broadcast that means
+    one copy per recipient, so only pass it when a monitoring copy is wanted (a cc
+    duplicating the lead's own address is dropped by send_campaign_email).
+    Tagged `email_kind="reconnect"` for open/click attribution.
+    """
+    settings = settings or get_settings()
+    try:
+        subject, html, text = build_reconnect_email(lead, campaign, image_url)
+        return await send_campaign_email(
+            to_email=lead.email,
+            subject=subject,
+            html=html,
+            text=text,
+            settings=settings,
+            cc=cc,
+            lead_id=lead.id,
+            email_kind="reconnect",
+        )
+    except Exception:
+        logger.exception("reconnect email failed", lead_id=lead.id)
         return False

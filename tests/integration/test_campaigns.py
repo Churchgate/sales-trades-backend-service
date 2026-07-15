@@ -426,6 +426,7 @@ async def test_deliver_pack_sends_only_materials_with_assets(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sent.update(to_email=to_email, subject=subject, html=html, text=text,
                      from_email=from_email, from_name=from_name)
@@ -440,6 +441,36 @@ async def test_deliver_pack_sends_only_materials_with_assets(
     assert result.pack_delivered_materials == ["Corporate Prospectus"]
     assert "Corporate Prospectus" in sent["html"]
     assert "Residence Floorplans" not in sent["html"]
+
+
+async def test_deliver_pack_reflags_synced_lead_for_crm_refresh(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pack delivered to an already-synced lead must re-queue CRM sync, so the
+    delivery-derived CRM fields (NOG Collateral Sent?/Lifecycle) refresh instead of
+    staying stale at their pre-delivery values."""
+    from app.services import pack_delivery
+
+    campaign = await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(requested_materials=["Corporate Prospectus"])
+    )
+    # Simulate the stale case: lead synced to CRM before its pack went out.
+    lead.crm_sync_status = CRM_SYNCED
+    lead = await leads_repo.update(db_session, lead)
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
+    ):
+        return True
+
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+
+    result = await pack_delivery.deliver_pack(db_session, lead, campaign, settings=enabled)
+    assert result.pack_delivery_status == "sent"
+    assert result.crm_sync_status == CRM_PENDING  # re-queued so CRM fields refresh
 
 
 async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
@@ -458,6 +489,7 @@ async def test_deliver_pack_sends_every_file_for_a_multi_file_material(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sent.update(html=html, text=text)
         return True
@@ -492,6 +524,7 @@ async def test_pack_email_is_source_aware_and_uses_display_meta(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         _fake_send.last = {"html": html, "text": text}
         return True
@@ -618,6 +651,48 @@ async def test_capture_with_inspection_sends_viewing_email(
     assert resp2.lead.pack_delivery_status == "not_requested"  # untouched
 
 
+async def test_recapture_does_not_resend_pack(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An idempotent re-submit (offline-queue retry / double-tap) of an already-
+    delivered lead must NOT email the visitor again (event duplicate-email bug)."""
+    from app.api.v1.endpoints import campaigns as campaigns_api
+    from app.services import pack_delivery
+
+    await _make_campaign(db_session)
+    sends: list = []
+
+    async def _fake_send(
+        *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
+    ):
+        sends.append(to_email)
+        return True
+
+    async def _noop_notify(lead, campaign, settings=None):
+        return None
+
+    monkeypatch.setattr(pack_delivery.campaign_mailer, "send_campaign_email", _fake_send)
+    monkeypatch.setattr(
+        pack_delivery, "get_settings", lambda: Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    )
+    monkeypatch.setattr(campaigns_api.campaign_mailer, "send_lead_notification", _noop_notify)
+
+    body = _lead(email="dup@example.com", requested_materials=["Corporate Prospectus"])
+    r1 = await campaigns_api.capture_lead("nog-2026", body, db_session)
+    assert r1.lead.pack_delivery_status == "sent"
+    assert sends == ["dup@example.com"]  # delivered once
+
+    # identical re-submit — must not resend
+    r2 = await campaigns_api.capture_lead(
+        "nog-2026",
+        _lead(email="dup@example.com", requested_materials=["Corporate Prospectus"]),
+        db_session,
+    )
+    assert r2.lead.pack_delivery_status == "sent"
+    assert sends == ["dup@example.com"]  # still one send — no duplicate
+
+
 async def test_deliver_pack_includes_logo_when_configured(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -633,6 +708,7 @@ async def test_deliver_pack_includes_logo_when_configured(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         _fake_send.last = {"html": html, "text": text}
         return True
@@ -702,6 +778,7 @@ async def test_deliver_pending_picks_up_pending_packs(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         return True
 
@@ -834,6 +911,7 @@ async def test_deliver_pack_ccs_configured_address(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         seen["cc"] = cc
         return True
@@ -904,6 +982,7 @@ async def test_resend_lead_pack_redelivers_over_http(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sends.append(to_email)
         return True
@@ -955,6 +1034,7 @@ async def test_resend_viewing_lead_resends_viewing_email(
 
     async def _fake_send(
         *, to_email, subject, html, text, settings=None, from_email=None, from_name=None, cc=None,
+        lead_id=None, email_kind=None,
     ):
         sends.append(to_email)
         return True
@@ -1013,3 +1093,67 @@ async def test_resend_lead_pack_wrong_campaign_404(
         res = await c.post(f"/api/v1/campaigns/{campaign.id}/leads/{lead.id}/resend-pack")
     assert res.status_code == 404
     assert other.id != campaign.id
+
+
+# --- send_campaign_email tracking payload ---
+
+
+async def test_send_campaign_email_enables_tracking_and_sets_custom_args() -> None:
+    """Open/click tracking must be explicitly requested (not left to account
+    defaults) and lead_id/email_kind must ride along as custom_args, or the
+    SendGrid Event Webhook has nothing to correlate opens/clicks back to."""
+    from app.services.campaign_mailer import send_campaign_email
+
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    captured: dict = {}
+
+    with respx.mock(base_url="https://api.sendgrid.com") as router:
+        def _capture(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(202)
+
+        router.post("/v3/mail/send").mock(side_effect=_capture)
+        sent = await send_campaign_email(
+            to_email="ada@example.com",
+            subject="Your WTC Abuja Digital Pack",
+            html="<p>hi</p>",
+            text="hi",
+            settings=enabled,
+            lead_id=42,
+            email_kind="pack",
+        )
+
+    assert sent is True
+    body = captured["body"]
+    assert body["tracking_settings"]["open_tracking"]["enable"] is True
+    assert body["tracking_settings"]["click_tracking"]["enable"] is True
+    assert body["custom_args"] == {"lead_id": "42", "email_kind": "pack"}
+
+
+async def test_send_campaign_email_omits_custom_args_without_lead_id() -> None:
+    """The internal staff notification isn't sent to a lead's inbox — it shouldn't
+    carry a lead_id that would misattribute its opens to that lead."""
+    from app.services.campaign_mailer import send_campaign_email
+
+    enabled = Settings(wtc_sendgrid_api_key="SG.wtc.test")
+    captured: dict = {}
+
+    with respx.mock(base_url="https://api.sendgrid.com") as router:
+        def _capture(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(202)
+
+        router.post("/v3/mail/send").mock(side_effect=_capture)
+        await send_campaign_email(
+            to_email="staff@wtcabuja.com",
+            subject="New Lead",
+            html="<p>hi</p>",
+            text="hi",
+            settings=enabled,
+        )
+
+    assert "custom_args" not in captured["body"]

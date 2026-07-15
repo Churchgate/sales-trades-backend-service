@@ -5,7 +5,7 @@ from app.core.security import generate_temp_password, hash_password
 from app.freshsales.client import FreshsalesClient
 from app.models.dashboard_user import DashboardUser
 from app.repositories import events_repo, users_repo
-from app.schemas.auth import CreateUserRequest, CurrentUser
+from app.schemas.auth import CreateUserRequest, CurrentUser, UpdateUserRequest
 from app.schemas.responses import MessageResponse, UserCreatedResponse, UsersListResponse
 from app.services import (
     daily_snapshot,
@@ -125,6 +125,42 @@ async def reset_user_password(email: str, session: SessionDep) -> UserCreatedRes
         ),
         temp_password=temp_password,
         email_sent=email_sent,
+    )
+
+
+@router.patch("/users/{email}", dependencies=[Depends(require_role("superadmin"))])
+async def update_user(
+    email: str,
+    body: UpdateUserRequest,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> UserCreatedResponse:
+    """Change a dashboard user's role. `owner_id` (rep-scoping) is kept only for the
+    `rep` role and cleared for everything else. A superadmin can't change their own
+    role (avoids demoting the last admin out of access)."""
+    if email.lower() == current_user.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You can't change your own role",
+        )
+    user = await users_repo.get_user_by_email(session, email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # owner_id only scopes reps; preserve the existing link when the caller doesn't
+    # send one, and drop it entirely for any non-rep role.
+    new_owner = (body.owner_id if body.owner_id is not None else user.owner_id) \
+        if body.role == "rep" else None
+    await users_repo.update_user(session, user, role=body.role, owner_id=new_owner)
+
+    return UserCreatedResponse(
+        status_code=status.HTTP_200_OK,
+        user=CurrentUser(
+            email=user.email, role=user.role, owner_id=user.owner_id,
+            must_change_password=user.must_change_password,
+        ),
+        temp_password=None,
+        email_sent=False,
     )
 
 

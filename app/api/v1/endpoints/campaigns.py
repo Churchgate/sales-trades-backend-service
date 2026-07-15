@@ -5,6 +5,7 @@ campaign's config and POST leads). Staff-only admin reads (list/stats/CSV/resync
 gated to admin/superadmin — the management 'how did the event go' surface.
 """
 
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -12,8 +13,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from app.api.dependencies import SessionDep, require_role
 from app.models.campaign import Campaign
 from app.models.lead import PACK_PENDING, Lead
-from app.repositories import campaigns_repo, leads_repo
+from app.repositories import campaigns_repo, contact_activity_repo, leads_repo
 from app.schemas.campaigns import (
+    ActivityOwnerSummary,
+    ActivityRow,
+    CampaignActivities,
+    CampaignActivitiesResponse,
     CampaignCreateRequest,
     CampaignDetailResponse,
     CampaignOut,
@@ -126,7 +131,7 @@ async def capture_lead(
     scheduled `pack_delivery_job` is the backstop for anything not yet sent.
     """
     try:
-        lead = await lead_service.capture_lead(session, slug.strip(), body)
+        lead, created = await lead_service.capture_lead_created(session, slug.strip(), body)
     except lead_service.CampaignNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except lead_service.CampaignInactiveError as exc:
@@ -134,11 +139,17 @@ async def capture_lead(
 
     campaign = await campaigns_repo.get(session, lead.campaign_id)
     if campaign is not None:
+        # Pack delivery is idempotent via pack_delivery_status (only PENDING when there's
+        # something new to send). The viewing + notification emails have no such status,
+        # so gate them on `created` — otherwise an idempotent re-submit re-emails everyone.
         if lead.pack_delivery_status == PACK_PENDING:
             lead = await pack_delivery.deliver_pack(session, lead, campaign)
-        if lead.inspection_requested:
+        if created and lead.inspection_requested:
             lead = await pack_delivery.deliver_viewing(session, lead, campaign)
-        await campaign_mailer.send_lead_notification(lead, campaign)
+        # Per-lead staff notification is off by default (email-volume) — set
+        # config["lead_notification"] = true on a campaign + re-seed to re-enable.
+        if created and (campaign.config or {}).get("lead_notification"):
+            await campaign_mailer.send_lead_notification(lead, campaign)
 
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
 
@@ -262,6 +273,8 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
     campaign = await _require_campaign(session, campaign_id)
     total = await leads_repo.count_for_campaign(session, campaign_id)
     synced = await leads_repo.count_synced(session, campaign_id)
+    packs = await leads_repo.count_packs_delivered(session, campaign_id)
+    reconnect = await leads_repo.count_reconnect_sent(session, campaign_id)
     by_day = await leads_repo.counts_by_day(session, campaign_id, campaign.timezone)
     stats = CampaignStats(
         total_leads=total,
@@ -269,13 +282,81 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
         marketing_opt_ins=await leads_repo.count_opt_ins(session, campaign_id),
         synced_count=synced,
         unsynced_count=total - synced,
-        packs_delivered=await leads_repo.count_packs_delivered(session, campaign_id),
+        packs_delivered=packs,
+        emails_sent=packs + reconnect,
+        emails_by_kind={"Packs": packs, "Reconnect": reconnect},
         by_interest=await leads_repo.counts_by_interest(session, campaign_id),
         by_material=await leads_repo.counts_by_material(session, campaign_id),
         by_source=await leads_repo.counts_by_source(session, campaign_id),
         by_day=[DayCount(day=day, count=count) for day, count in by_day],
+        # Nurturing = pack delivered; New = everyone else. Mirrors the CRM field.
+        by_lifecycle_stage={"New": total - packs, "Nurturing": packs},
     )
     return CampaignStatsResponse(status_code=status.HTTP_200_OK, stats=stats)
+
+
+_ACTIVITY_KINDS = ("call", "email", "meeting", "note")
+
+
+@router.get("/{campaign_id}/activities", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+async def campaign_activities(
+    campaign_id: int,
+    session: SessionDep,
+    from_: Annotated[date | None, Query(alias="from")] = None,
+    to: Annotated[date | None, Query()] = None,
+    owner: Annotated[str | None, Query()] = None,
+    tier: Annotated[str | None, Query()] = None,
+) -> CampaignActivitiesResponse:
+    """Per-salesperson outreach (call/email/meeting/note) on this campaign's contacts,
+    over an optional [from, to] date range, optionally filtered to one owner and/or
+    prospect tier. Returns the summary, the filter options, and a capped drill-down list.
+    Data is populated by `nog_activity_sync`; this read is pure SQL over `contact_activity`."""
+    await _require_campaign(session, campaign_id)
+
+    # Default to a wide-open window; the UI supplies concrete from/to. `to` is
+    # inclusive of the whole day.
+    start = (
+        datetime.combine(from_, time.min, tzinfo=UTC)
+        if from_
+        else datetime(2000, 1, 1, tzinfo=UTC)
+    )
+    end = datetime.combine(to, time.max, tzinfo=UTC) if to else datetime.now(UTC)
+
+    grouped = await contact_activity_repo.summary_by_owner(
+        session, campaign_id, start, end, owner=owner, tier=tier
+    )
+    by_owner: dict[str, ActivityOwnerSummary] = {}
+    total = 0
+    for owner_name, activity_type, count in grouped:
+        row = by_owner.setdefault(owner_name, ActivityOwnerSummary(owner_name=owner_name))
+        if activity_type in _ACTIVITY_KINDS:
+            setattr(row, activity_type, count)
+        row.total += count
+        total += count
+    summary = sorted(by_owner.values(), key=lambda r: r.total, reverse=True)
+
+    rows = await contact_activity_repo.list_activities(
+        session, campaign_id, start, end, owner=owner, tier=tier, limit=500
+    )
+    activities = CampaignActivities(
+        summary=summary,
+        owners=await contact_activity_repo.distinct_owners(session, campaign_id),
+        tiers=["Strategic", "Standard"],
+        rows=[
+            ActivityRow(
+                activity_type=r.activity_type,
+                contact_name=r.contact_name,
+                owner_name=r.owner_name,
+                prospect_tier=r.prospect_tier,
+                direction=r.direction,
+                occurred_at=r.occurred_at,
+                subject=r.subject,
+            )
+            for r in rows
+        ],
+        total=total,
+    )
+    return CampaignActivitiesResponse(status_code=status.HTTP_200_OK, activities=activities)
 
 
 @router.get(
