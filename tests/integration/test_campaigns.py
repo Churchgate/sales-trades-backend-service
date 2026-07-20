@@ -1230,3 +1230,105 @@ async def test_send_campaign_email_omits_custom_args_without_lead_id() -> None:
         )
 
     assert "custom_args" not in captured["body"]
+
+
+# --- Hot Leads queue (cross-campaign) ---
+
+
+async def test_list_hot_spans_campaigns(db_session: AsyncSession) -> None:
+    """The Hot Leads queue must show leads from every source in one ranked
+    list — every other lead query in this file is scoped to one campaign,
+    which is the gap this queue exists to close."""
+    await _make_campaign(db_session, slug="nog-2026")
+    await _make_campaign(db_session, slug="wtcabuja-website")
+
+    nog_lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="nog@example.com", inspection_requested=True),
+    )
+    web_lead = await lead_service.capture_lead(
+        db_session, "wtcabuja-website", _lead(email="web@example.com", inspection_requested=True),
+    )
+
+    hot = await leads_repo.list_hot(db_session, limit=100)
+    ids = {lead.id for lead in hot}
+    assert nog_lead.id in ids
+    assert web_lead.id in ids
+
+
+async def test_list_hot_ranks_by_engagement_score_desc(db_session: AsyncSession) -> None:
+    await _make_campaign(db_session)
+    low = await lead_service.capture_lead(db_session, "nog-2026", _lead(email="low@example.com"))
+    high = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="high@example.com", inspection_requested=True, timing="Immediately"),
+    )
+
+    hot = await leads_repo.list_hot(db_session, limit=100)
+    ranked_ids = [lead.id for lead in hot]
+    assert ranked_ids.index(high.id) < ranked_ids.index(low.id)
+
+
+async def test_list_hot_filters_by_min_engagement_and_opened(db_session: AsyncSession) -> None:
+    await _make_campaign(db_session)
+    engaged = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="engaged2@example.com"),
+    )
+    engaged.pack_opened_count = 5
+    await leads_repo.update(db_session, engaged)
+    untouched = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="untouched@example.com"),
+    )
+
+    opened_only = await leads_repo.list_hot(db_session, opened=True, limit=100)
+    opened_ids = {lead.id for lead in opened_only}
+    assert engaged.id in opened_ids
+    assert untouched.id not in opened_ids
+
+    unopened_only = await leads_repo.list_hot(db_session, opened=False, limit=100)
+    unopened_ids = {lead.id for lead in unopened_only}
+    assert untouched.id in unopened_ids
+    assert engaged.id not in unopened_ids
+
+
+async def test_list_hot_filters_by_clicked_and_uncontacted(db_session: AsyncSession) -> None:
+    from app.models.lead import TRIAGE_CONTACTED
+
+    await _make_campaign(db_session)
+    clicker = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="clicker@example.com"),
+    )
+    clicker.pack_clicked_materials = ["Corporate Prospectus"]
+    await leads_repo.update(db_session, clicker)
+    non_clicker = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="nonclicker@example.com"),
+    )
+
+    clicked_only = await leads_repo.list_hot(db_session, clicked=True, limit=100)
+    assert clicker.id in {lead.id for lead in clicked_only}
+    assert non_clicker.id not in {lead.id for lead in clicked_only}
+
+    await leads_repo.set_triage(
+        db_session, non_clicker, status=TRIAGE_CONTACTED, by="rep@example.com"
+    )
+    uncontacted_only = await leads_repo.list_hot(db_session, uncontacted=True, limit=100)
+    uncontacted_ids = {lead.id for lead in uncontacted_only}
+    assert clicker.id in uncontacted_ids
+    assert non_clicker.id not in uncontacted_ids
+
+
+async def test_set_triage_records_status_and_actor(db_session: AsyncSession) -> None:
+    from app.models.lead import TRIAGE_CONTACTED, TRIAGE_NEW
+
+    await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="triage@example.com")
+    )
+    assert lead.triage_status == TRIAGE_NEW
+    assert lead.triage_at is None
+
+    updated = await leads_repo.set_triage(
+        db_session, lead, status=TRIAGE_CONTACTED, by="rep@example.com"
+    )
+    assert updated.triage_status == TRIAGE_CONTACTED
+    assert updated.triage_at is not None
+    assert updated.triage_by == "rep@example.com"
