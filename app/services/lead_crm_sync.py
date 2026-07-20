@@ -24,13 +24,26 @@ from app.repositories import campaigns_repo, leads_repo
 
 logger = get_logger(__name__)
 
-# NOG Energy Week is the only campaign with its own Freshsales "Source" option and
-# "Lifecycle Stage-NOG Week" field, so these three are scoped to it (not the website
-# campaign). The Source dropdown is a system field: Freshsales requires the numeric
-# choice id (a plain string/label 400s), verified live via
-# GET /crm/sales/api/selector/lead_sources — this id is the "NOG-Week-2026" choice.
+# NOG Energy Week is the only campaign with its own Freshsales "Lifecycle
+# Stage-NOG Week" custom field, so that one stays scoped to it. "Source" and the
+# system "Lifecycle stage" field, however, are REQUIRED on every contact as of
+# ~2026-07-15 — Freshsales started rejecting creates missing either with 400
+# "Source can't be empty"/"Lifecycle stage can't be empty" (see incident: 4
+# wtcabuja-website leads, ids 533-536, silently failed from that date; nog-2026
+# leads happened to already be synced by then so the gap wasn't visible there,
+# but the next new NOG lead would have hit the same 400). Both dropdowns are
+# system fields: Freshsales requires the numeric choice id, a plain string/label
+# 400s. Verified live via GET /crm/sales/api/selector/lead_sources and
+# GET /crm/sales/api/settings/contacts/fields (field name `lifecycle_stage_id`).
 _NOG_2026_SLUG = "nog-2026"
 _NOG_LEAD_SOURCE_ID = 17001007403
+_WEBSITE_LEAD_SOURCE_ID = 17001006640  # "Website" choice
+_LEAD_SOURCE_ID_BY_CAMPAIGN = {
+    _NOG_2026_SLUG: _NOG_LEAD_SOURCE_ID,
+}
+# Every contact must carry a lifecycle stage; new captures start at "Inquiry
+# Stage" (position 1 of the dropdown) regardless of campaign.
+_INQUIRY_STAGE_ID = 18006136123
 
 
 def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
@@ -42,6 +55,11 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
         "mobile_number": lead.phone,
         "job_title": lead.job_title,
         "tags": lead.tags or [],
+        # Required on every contact — see module comment above.
+        "lead_source_id": _LEAD_SOURCE_ID_BY_CAMPAIGN.get(
+            campaign.slug, _WEBSITE_LEAD_SOURCE_ID
+        ),
+        "lifecycle_stage_id": _INQUIRY_STAGE_ID,
         "custom_field": {
             "cf_company": lead.company,
             "cf_campaign": campaign.slug,
@@ -56,7 +74,6 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
     }
     if campaign.slug == _NOG_2026_SLUG:
         pack_sent = lead.pack_delivery_status == PACK_SENT
-        contact["lead_source_id"] = _NOG_LEAD_SOURCE_ID
         contact["custom_field"]["cf_collateral_sent"] = "Yes" if pack_sent else "No"
         contact["custom_field"]["cf_lifecycle_stagenog_week"] = (
             "Nurturing" if pack_sent else "New"
