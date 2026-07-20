@@ -178,7 +178,16 @@ def _split_name(raw: str) -> tuple[str, str]:
 def _clean_email(raw: str) -> str | None:
     # Trailing punctuation slips in when a card is transcribed ('name@co.com/').
     email = raw.strip().strip("/.,;:").lower()
-    return email if _EMAIL_RE.match(email) else None
+    if _EMAIL_RE.match(email):
+        return email
+    # A rep sometimes logs two emails in one cell, space-separated
+    # ('a@co.com b@other.com') — take the first valid one rather than dropping
+    # the whole lead.
+    for token in email.split():
+        token = token.strip("/.,;:")
+        if _EMAIL_RE.match(token):
+            return token
+    return None
 
 
 def _clean_phone(raw: str) -> str:

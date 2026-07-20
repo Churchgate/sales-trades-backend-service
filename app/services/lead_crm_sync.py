@@ -12,6 +12,7 @@ verification before enabling; until then this is exercised via mocked tests.
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -84,6 +85,14 @@ async def sync_lead(
         lead.crm_sync_status = CRM_SYNCED
         lead.crm_synced_at = datetime.now(UTC)
         lead.crm_error = None
+    except httpx.HTTPStatusError as exc:
+        # response.raise_for_status() in FreshsalesClient discards the body, which
+        # carries the actual validation message (e.g. field errors) — recover it
+        # here so crm_error is diagnosable instead of a bare "400 Bad Request".
+        detail = f"{exc} | body: {exc.response.text}"
+        logger.warning("lead crm sync failed", lead_id=lead.id, error=detail)
+        lead.crm_sync_status = CRM_FAILED
+        lead.crm_error = detail[:500]
     except Exception as exc:  # noqa: BLE001 — record and move on; job retries later
         logger.warning("lead crm sync failed", lead_id=lead.id, error=str(exc))
         lead.crm_sync_status = CRM_FAILED
