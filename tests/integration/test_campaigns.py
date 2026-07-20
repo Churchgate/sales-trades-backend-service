@@ -805,12 +805,13 @@ async def test_stats_by_material_counts_requests(db_session: AsyncSession) -> No
 
 
 async def test_engagement_score_ranks_by_intent(db_session: AsyncSession) -> None:
+    """Form-submission signals alone still rank sensibly against each other."""
     from app.services import lead_scoring
 
     await _make_campaign(db_session)
-    hot = await lead_service.capture_lead(
+    warm = await lead_service.capture_lead(
         db_session, "nog-2026",
-        _lead(email="hot@example.com", interests=["Office Leasing"],
+        _lead(email="warm@example.com", interests=["Office Leasing"],
               requested_materials=["Corporate Prospectus"],
               inspection_requested=True, timing="Immediately", marketing_opt_in=True),
     )
@@ -818,9 +819,81 @@ async def test_engagement_score_ranks_by_intent(db_session: AsyncSession) -> Non
         db_session, "nog-2026",
         _lead(email="cold@example.com", timing="Researching"),
     )
-    assert lead_scoring.engagement_score(hot) > lead_scoring.engagement_score(cold)
-    # Inspection + interest + material + immediate timing should score well.
-    assert lead_scoring.engagement_score(hot) >= 50
+    assert lead_scoring.engagement_score(warm) > lead_scoring.engagement_score(cold)
+
+
+async def test_engagement_score_behaviour_outranks_form_only(db_session: AsyncSession) -> None:
+    """A prospect who repeatedly opened the pack and clicked a document must
+    outrank one whose only signal is a ticked 'inspection requested' box — the
+    inversion that buried genuinely engaged leads (e.g. a CEO who opened the
+    pack 34 times) below barely-engaged ones on the dashboard's default sort."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services import lead_scoring
+
+    await _make_campaign(db_session)
+    engaged = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="engaged@example.com"),
+    )
+    engaged.pack_opened_count = 34
+    engaged.pack_opened_at = datetime.now(UTC) - timedelta(days=10)
+    engaged.pack_clicked_materials = ["Office Floorplates"]
+
+    form_only = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="formonly@example.com", inspection_requested=True),
+    )
+
+    assert lead_scoring.engagement_score(engaged) > lead_scoring.engagement_score(form_only)
+
+
+async def test_engagement_score_rewards_recent_engagement(db_session: AsyncSession) -> None:
+    """Same opens/clicks, but a prospect who engaged yesterday should outrank
+    one whose only engagement was weeks ago — recency was absent entirely from
+    the original scorer."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services import lead_scoring
+
+    await _make_campaign(db_session)
+    recent = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="recent@example.com"),
+    )
+    recent.pack_opened_count = 3
+    recent.pack_opened_at = datetime.now(UTC) - timedelta(days=1)
+
+    stale = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="stale@example.com"),
+    )
+    stale.pack_opened_count = 3
+    stale.pack_opened_at = datetime.now(UTC) - timedelta(days=45)
+
+    assert lead_scoring.engagement_score(recent) > lead_scoring.engagement_score(stale)
+
+
+async def test_engagement_score_zero_signal_is_zero(db_session: AsyncSession) -> None:
+    from app.services import lead_scoring
+
+    await _make_campaign(db_session)
+    blank = await lead_service.capture_lead(
+        db_session, "nog-2026", _lead(email="blank@example.com"),
+    )
+    assert lead_scoring.engagement_score(blank) == 0
+
+
+async def test_capture_persists_engagement_score(db_session: AsyncSession) -> None:
+    """engagement_score must be a real, persisted column (not just computed
+    on read) so the cross-campaign Hot Leads queue can ORDER BY it in SQL."""
+    from app.services import lead_scoring
+
+    await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(
+        db_session, "nog-2026",
+        _lead(email="scored@example.com", inspection_requested=True, timing="Immediately"),
+    )
+    assert lead.engagement_score > 0
+    assert lead.engagement_score == lead_scoring.engagement_score(lead)
+    assert lead.score_computed_at is not None
 
 
 # --- CRM sync ---

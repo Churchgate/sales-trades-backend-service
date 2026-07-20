@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     # so testing can never touch real deals; widen (comma-separated) once verified.
     agent_allowed_pipeline_ids: str = "17000075034"
 
+    # --- Lead intelligence (Apollo enrichment + OpenRouter ICP scoring) ---
+    # Both leave empty to disable in dev/QA; scripts/enrich_leads.py and
+    # scripts/score_leads_icp.py degrade to dry-run-only without them.
+    apollo_api_key: str = ""
+    openrouter_api_key: str = ""
+
     @property
     def freshsales_base_url(self) -> str:
         # Freshsales Suite host. The endpoint paths in app/freshsales/endpoints.py

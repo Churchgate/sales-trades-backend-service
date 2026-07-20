@@ -62,6 +62,43 @@ async def test_ingest_open_event_sets_rollup_and_records_event(db_session: Async
     assert rows[0].email_kind == "pack"
 
 
+async def test_ingest_open_event_tracks_most_recent_open(db_session: AsyncSession) -> None:
+    """pack_opened_at must reflect the LATEST open, not the first — otherwise
+    engagement_score's recency bonus would judge a lead who just re-engaged as
+    stale, based on a touch from weeks ago."""
+    await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())
+
+    first = _open_event(lead.id, sg_event_id="evt-open-first")
+    first["timestamp"] = _TS
+    await email_event_ingest.ingest_events(db_session, [first])
+    await db_session.refresh(lead)
+    first_opened_at = lead.pack_opened_at
+
+    later = _open_event(lead.id, sg_event_id="evt-open-later")
+    later["timestamp"] = _TS + 86400 * 10  # 10 days later
+    await email_event_ingest.ingest_events(db_session, [later])
+    await db_session.refresh(lead)
+
+    assert lead.pack_opened_count == 2
+    assert lead.pack_opened_at > first_opened_at
+
+
+async def test_ingest_open_event_persists_engagement_score(db_session: AsyncSession) -> None:
+    from app.services import lead_scoring
+
+    await _make_campaign(db_session)
+    lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())
+    assert lead.engagement_score == 0
+
+    await email_event_ingest.ingest_events(db_session, [_open_event(lead.id)])
+    await db_session.refresh(lead)
+
+    assert lead.engagement_score > 0
+    assert lead.engagement_score == lead_scoring.engagement_score(lead)
+    assert lead.score_computed_at is not None
+
+
 async def test_ingest_click_event_resolves_material(db_session: AsyncSession) -> None:
     await _make_campaign(db_session)
     lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())
