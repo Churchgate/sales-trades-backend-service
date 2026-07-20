@@ -1,9 +1,12 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.models.lead import TRIAGE_CONTACTED, TRIAGE_DISMISSED, TRIAGE_NEW, TRIAGE_SNOOZED
 from app.schemas.responses import BaseResponse
+
+_TRIAGE_STATUSES = {TRIAGE_NEW, TRIAGE_CONTACTED, TRIAGE_DISMISSED, TRIAGE_SNOOZED}
 
 # --- Requests ---
 
@@ -27,6 +30,21 @@ class CampaignUpdateRequest(BaseModel):
     ends_on: date | None = None
     timezone: str | None = None
     config: dict[str, Any] | None = None
+
+
+class TriageUpdateRequest(BaseModel):
+    """PATCH — sales triage state on the Hot Leads queue. Independent of
+    crm_sync_status/pack_delivery_status, which track system delivery, not
+    whether a human has actually followed up."""
+
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def must_be_valid_triage_status(cls, v: str) -> str:
+        if v not in _TRIAGE_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(_TRIAGE_STATUSES))}")
+        return v
 
 
 class LeadCreateRequest(BaseModel):
@@ -109,6 +127,16 @@ class LeadOut(BaseModel):
     pack_fulfilled: bool = False
     # 0–100 intent score for ranking leads (see services/lead_scoring.py).
     engagement_score: int = 0
+    # Company/individual fit score (see services/icp_scoring.py) — scored once
+    # via scripts/score_leads_icp.py, not recomputed per request.
+    icp_score: int | None = None
+    icp_tier: str | None = None
+    icp_rationale: str | None = None
+    # Sales triage state on the Hot Leads queue — independent of the two
+    # system-delivery fields above.
+    triage_status: str = "new"
+    triage_at: datetime | None = None
+    triage_by: str | None = None
 
 
 class DayCount(BaseModel):
