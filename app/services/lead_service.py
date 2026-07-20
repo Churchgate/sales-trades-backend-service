@@ -22,6 +22,7 @@ from app.models.lead import (
 )
 from app.repositories import campaigns_repo, leads_repo
 from app.schemas.campaigns import LeadCreateRequest
+from app.services import lead_scoring
 
 logger = get_logger(__name__)
 
@@ -84,6 +85,13 @@ def _apply_payload(lead: Lead, campaign: Campaign, payload: LeadCreateRequest) -
     # flip an already-delivered pack back to PENDING and email the visitor again.
 
 
+def _recompute_score(lead: Lead) -> None:
+    """Persist engagement_score so the cross-campaign Hot Leads queue can
+    ORDER BY it in SQL instead of recomputing per-request on every page load."""
+    lead.engagement_score = lead_scoring.engagement_score(lead)
+    lead.score_computed_at = datetime.now(UTC)
+
+
 def _next_pack_status(
     existing: Lead | None, prev_status: str | None, prev_materials: set[str],
     payload: LeadCreateRequest,
@@ -136,6 +144,7 @@ async def capture_lead_created(
     _apply_payload(lead, campaign, payload)
     lead.pack_delivery_status = _next_pack_status(existing, prev_status, prev_materials, payload)
     lead.pack_delivery_error = None
+    _recompute_score(lead)
 
     if existing is not None:
         return await leads_repo.update(session, lead), False
@@ -157,6 +166,7 @@ async def capture_lead_created(
             existing, prev_status, prev_materials, payload
         )
         existing.pack_delivery_error = None
+        _recompute_score(existing)
         return await leads_repo.update(session, existing), False
 
 

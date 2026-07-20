@@ -1,9 +1,15 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
+
+# Triage state on the Hot Leads queue — independent of CRM sync/pack delivery.
+TRIAGE_NEW = "new"
+TRIAGE_CONTACTED = "contacted"
+TRIAGE_DISMISSED = "dismissed"
+TRIAGE_SNOOZED = "snoozed"
 
 # CRM sync lifecycle for a captured lead. Capture never depends on the CRM being
 # reachable: a lead is saved 'pending' and a background job pushes it later.
@@ -41,6 +47,9 @@ class Lead(SQLModel, table=True):
         Index("idx_leads_interests", "interests", postgresql_using="gin"),
         # Delivery job scans pending/failed packs across campaigns (like CRM sync).
         Index("idx_leads_campaign_pack", "campaign_id", "pack_delivery_status"),
+        # Cross-campaign Hot Leads queue sorts/filters by these directly in SQL.
+        Index("idx_leads_engagement_score", "engagement_score"),
+        Index("idx_leads_triage_status", "triage_status"),
     )
 
     id: int | None = Field(
@@ -118,3 +127,26 @@ class Lead(SQLModel, table=True):
     pack_clicked_materials: list[str] | None = Field(
         default=None, sa_column=Column(ARRAY(String))
     )
+
+    # Persisted engagement score (services/lead_scoring.py) — was previously
+    # computed per-request in Python only, which meant it could never be
+    # SQL-sorted; the cross-campaign Hot Leads queue needs ORDER BY in the DB.
+    engagement_score: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    score_computed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
+    # ICP company-fit score (services/icp_scoring.py, OpenRouter-based). Scored
+    # once per lead (batch/backfill), not recomputed per request like
+    # engagement_score, since it depends on an LLM call.
+    icp_score: int | None = None
+    icp_tier: str | None = None
+    icp_rationale: str | None = None
+
+    # Sales triage state on the Hot Leads queue — independent of crm_sync_status
+    # and pack_delivery_status, which track system delivery, not human follow-up.
+    triage_status: str = Field(default=TRIAGE_NEW)
+    triage_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    triage_by: str | None = None

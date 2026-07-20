@@ -31,6 +31,7 @@ from app.models.email_event import (
 )
 from app.models.lead import Lead
 from app.repositories import campaigns_repo, email_events_repo, leads_repo
+from app.services import lead_scoring
 
 logger = get_logger(__name__)
 
@@ -155,9 +156,12 @@ async def _bump_lead_rollup(
 ) -> None:
     changed = False
     if event_type == EVENT_OPEN:
-        if lead.pack_opened_at is None:
+        # Track the MOST RECENT open, not the first — engagement_score's recency
+        # bonus (services/lead_scoring.py) needs "how long since they last looked",
+        # not "how long since they first looked", to mean anything for a lead who
+        # has opened many times.
+        if lead.pack_opened_at is None or occurred_at > lead.pack_opened_at:
             lead.pack_opened_at = occurred_at
-            changed = True
         lead.pack_opened_count = (lead.pack_opened_count or 0) + 1
         changed = True
     elif event_type == EVENT_CLICK and material:
@@ -167,4 +171,10 @@ async def _bump_lead_rollup(
             lead.pack_clicked_materials = clicked
             changed = True
     if changed:
+        # This is the event that changes engagement_score (opens/clicks/recency
+        # dominate it — see lead_scoring.py) — recompute and persist here so the
+        # cross-campaign Hot Leads queue can ORDER BY it directly in SQL instead
+        # of recomputing per-request for every lead on every page load.
+        lead.engagement_score = lead_scoring.engagement_score(lead)
+        lead.score_computed_at = datetime.now(UTC)
         await leads_repo.update(session, lead)

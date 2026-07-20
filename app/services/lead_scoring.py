@@ -1,43 +1,72 @@
 """Engagement / intent score for a captured lead — the dashboard ranking signal.
 
-A booth lead leaves several intent signals at capture: how many materials they
-asked for, which topics interest them, whether they booked an inspection, how
-soon they want to act, and whether they opted into marketing. This rolls those
-into a single 0–100 score so the dashboard can rank "who is hottest" at a glance,
-and so the request→delivery loop (did they ask for a pack, did we deliver it) is
-visible per lead.
+A booth lead leaves signals at two moments: what they ticked on the capture
+form (materials, interests, inspection, timing), and — critically — what they
+actually did after we delivered their digital pack (opens, document clicks,
+how recently). The latter is the stronger signal: a prospect who opened the
+pack five times and clicked the floorplates last week is a hotter lead than
+one who merely checked "immediate" on a form and never engaged again, but the
+original version of this scorer only ever looked at the form — pack opens,
+click-throughs and recency were tracked on the model
+(`pack_opened_count`/`pack_opened_at`/`pack_clicked_materials`, populated by
+`services/email_event_ingest.py` from the SendGrid webhook) but never scored,
+so the dashboard's default sort buried the most engaged prospects.
 
 Weights are a deliberately simple, transparent starting point — tune the
 constants below as the sales team learns what actually predicts conversion.
 """
 
+from datetime import UTC, datetime
+
 from app.models.lead import PACK_SENT, Lead
 
-# --- tunable weights ---
-_PER_MATERIAL = 4  # each requested document (content demand)
-_PER_INTEREST = 6  # each interest topic selected
-_INSPECTION = 30  # booked a private inspection — strongest in-person intent
-_MARKETING_OPT_IN = 8  # agreed to ongoing contact
-_PACK_DELIVERED = 6  # we successfully fulfilled their request (loop closed)
+# --- behavioural signals (post-delivery — the dominant factor) ---
+
+# (minimum opens, points) — largest threshold first; first match wins.
+_OPEN_TIERS: list[tuple[int, int]] = [
+    (5, 30),
+    (3, 22),
+    (2, 15),
+    (1, 8),
+]
+_PER_CLICK = 12
+_MAX_CLICK_POINTS = 30  # ~3 distinct documents clicked
+
+# (max days since last open, points) — smallest threshold first; first match
+# wins. Rewards a prospect who *just* looked, over one who went cold weeks ago.
+_RECENCY_TIERS: list[tuple[int, int]] = [
+    (2, 15),
+    (7, 10),
+    (14, 6),
+    (30, 3),
+]
+
+# --- form-submission signals (weaker than demonstrated engagement, so these
+# weights are intentionally smaller than the pre-engagement-aware version) ---
+_PER_MATERIAL = 2  # each requested document (content demand)
+_PER_INTEREST = 4  # each interest topic selected
+_INSPECTION = 18  # booked a private inspection — strong, but a ticked box alone
+_MARKETING_OPT_IN = 5  # agreed to ongoing contact
+_PACK_DELIVERED = 3  # we successfully fulfilled their request (loop closed)
 _MAX_SCORE = 100
 
 # Decision timing → points. Matched case-insensitively by substring so both the
 # canonical vocabulary ("Immediate", "0-3 months", "Future") and the kiosk form's
 # wording ("Immediately", "Within 3 months", "Researching") score sensibly.
 _TIMING_POINTS: list[tuple[str, int]] = [
-    ("immediat", 25),
-    ("today", 25),
-    ("tomorrow", 22),
-    ("0-3", 18),
-    ("within 3", 18),
-    ("this week", 18),
-    ("3-6", 12),
-    ("3–6", 12),
-    ("6-12", 6),
-    ("6–12", 6),
-    ("flexible", 4),
-    ("future", 2),
-    ("research", 2),
+    ("immediat", 18),
+    ("today", 18),
+    ("tomorrow", 15),
+    ("0-3", 12),
+    ("within 3", 12),
+    ("this week", 12),
+    ("3-6", 8),
+    ("3–6", 8),
+    ("6-12", 4),
+    ("6–12", 4),
+    ("flexible", 2),
+    ("future", 1),
+    ("research", 1),
 ]
 
 
@@ -51,9 +80,42 @@ def _timing_points(timing: str | None) -> int:
     return 0
 
 
-def engagement_score(lead: Lead) -> int:
-    """0–100 intent score for ranking leads on the dashboard."""
+def _open_points(opens: int) -> int:
+    for threshold, points in _OPEN_TIERS:
+        if opens >= threshold:
+            return points
+    return 0
+
+
+def _click_points(clicked_materials: list[str] | None) -> int:
+    return min(_PER_CLICK * len(clicked_materials or []), _MAX_CLICK_POINTS)
+
+
+def _recency_points(opened_at: datetime | None, *, now: datetime | None = None) -> int:
+    if opened_at is None:
+        return 0
+    now = now or datetime.now(UTC)
+    if opened_at.tzinfo is None:
+        opened_at = opened_at.replace(tzinfo=UTC)
+    days_ago = (now - opened_at).total_seconds() / 86400
+    for threshold, points in _RECENCY_TIERS:
+        if days_ago <= threshold:
+            return points
+    return 0
+
+
+def engagement_score(lead: Lead, *, now: datetime | None = None) -> int:
+    """0–100 intent score for ranking leads on the dashboard.
+
+    Behavioural signals (opens/clicks/recency) are weighted more heavily than
+    form-submission signals — see module docstring for why.
+    """
     score = 0
+    # Behavioural (post-delivery)
+    score += _open_points(lead.pack_opened_count or 0)
+    score += _click_points(lead.pack_clicked_materials)
+    score += _recency_points(lead.pack_opened_at, now=now)
+    # Form submission
     score += _PER_MATERIAL * len(lead.requested_materials or [])
     score += _PER_INTEREST * len(lead.interests or [])
     score += _timing_points(lead.timing)
