@@ -22,23 +22,31 @@ from app.models.lead import PACK_SENT, Lead
 
 # --- behavioural signals (post-delivery — the dominant factor) ---
 
-# (minimum opens, points) — largest threshold first; first match wins.
+# (minimum opens, points) — largest threshold first; first match wins. Extra
+# tiers above 5 exist because a flat "5+" bucket scored a lead who opened the
+# pack 34 times identically to one who opened it 5 times — under-rewarding
+# exactly the extreme-engagement case this rebalancing exists to surface.
 _OPEN_TIERS: list[tuple[int, int]] = [
-    (5, 30),
-    (3, 22),
-    (2, 15),
+    (25, 40),
+    (15, 34),
+    (10, 30),
+    (5, 26),
+    (3, 20),
+    (2, 14),
     (1, 8),
 ]
 _PER_CLICK = 12
 _MAX_CLICK_POINTS = 30  # ~3 distinct documents clicked
 
 # (max days since last open, points) — smallest threshold first; first match
-# wins. Rewards a prospect who *just* looked, over one who went cold weeks ago.
+# wins. Rewards a prospect who engaged recently over one who's gone cold, but
+# tuned to a commercial-real-estate sales cycle (weeks/months), not a SaaS
+# trial cycle — a touch from 10 days ago is still fresh, not stale.
 _RECENCY_TIERS: list[tuple[int, int]] = [
-    (2, 15),
-    (7, 10),
-    (14, 6),
-    (30, 3),
+    (7, 15),
+    (30, 10),
+    (60, 5),
+    (90, 2),
 ]
 
 # --- form-submission signals (weaker than demonstrated engagement, so these
