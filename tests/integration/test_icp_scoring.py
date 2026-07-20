@@ -135,3 +135,104 @@ def test_build_prompt_handles_missing_enrichment() -> None:
     prompt = icp_scoring._build_prompt(lead)
 
     assert "Unknown" in prompt
+
+
+# --- residential vs. office rubric selection ---
+
+
+def test_is_residential_only_true_for_residential_interest_alone() -> None:
+    lead = _lead(interests=["Executive Residences"])
+    assert icp_scoring._is_residential_only(lead) is True
+
+
+def test_is_residential_only_false_for_office_interest() -> None:
+    lead = _lead(interests=["Office Leasing"])
+    assert icp_scoring._is_residential_only(lead) is False
+
+
+def test_is_residential_only_false_for_mixed_interest() -> None:
+    """Mixed office+residence interest uses the office rubric — a corporate
+    decision-maker evaluating a package deal, per product decision."""
+    lead = _lead(interests=["Office Leasing", "Executive Residences"])
+    assert icp_scoring._is_residential_only(lead) is False
+
+
+def test_is_residential_only_matches_raw_kiosk_form_values() -> None:
+    """The kiosk capture path stores raw values ("residences"/"offices") not
+    the canonical NOG rep-import tags ("Executive Residences"/"Office
+    Leasing") — an exact-tag check would silently misroute these. Verified
+    against real production data: 4 leads carry the bare "residences" value."""
+    assert icp_scoring._is_residential_only(_lead(interests=["residences"])) is True
+    assert icp_scoring._is_residential_only(_lead(interests=["offices"])) is False
+    # "both"/"full" represent mixed intent under the raw kiosk vocabulary too
+    # (see scripts/import_rep_leads.py's own _interests()) — correctly fall
+    # through to the office rubric since they match neither substring alone.
+    assert icp_scoring._is_residential_only(_lead(interests=["both"])) is False
+    assert icp_scoring._is_residential_only(_lead(interests=["full"])) is False
+
+
+def test_is_residential_only_false_for_no_interests() -> None:
+    lead = _lead(interests=None)
+    assert icp_scoring._is_residential_only(lead) is False
+
+
+def test_build_prompt_uses_residential_dimensions_for_residential_lead() -> None:
+    lead = _lead(job_title="Regional Director", interests=["Executive Residences"])
+    prompt = icp_scoring._build_prompt(lead)
+
+    assert "DIMENSION 1 — Seniority / Role Signal" in prompt
+    assert "DIMENSION 3 — Relocation Signal" in prompt
+    assert "DIMENSION 1 — Industry Match" not in prompt
+
+
+def test_build_prompt_uses_office_dimensions_for_office_and_mixed_leads() -> None:
+    office_only = _lead(interests=["Office Leasing"])
+    mixed = _lead(interests=["Office Leasing", "Executive Residences"])
+    for lead in (office_only, mixed):
+        prompt = icp_scoring._build_prompt(lead)
+        assert "DIMENSION 1 — Industry Match" in prompt
+        assert "DIMENSION 1 — Seniority / Role Signal" not in prompt
+
+
+def test_system_prompt_selection_matches_rubric() -> None:
+    residential = _lead(interests=["Executive Residences"])
+    office = _lead(interests=["Office Leasing"])
+
+    assert "INDIVIDUAL housing decision" in icp_scoring._system_prompt_for(residential)
+    assert "INDIVIDUAL housing decision" not in icp_scoring._system_prompt_for(office)
+
+
+async def test_score_lead_sets_rubric_field() -> None:
+    import json
+
+    residential = _lead(interests=["Executive Residences"])
+    office = _lead(interests=["Office Leasing"])
+
+    with respx.mock(base_url="https://openrouter.ai") as router:
+        router.post("/api/v1/chat/completions").mock(
+            return_value=_openrouter_response(json.dumps(_VALID_RESPONSE))
+        )
+        async with httpx.AsyncClient() as client:
+            residential_result = await icp_scoring.score_lead(client, "test-key", residential)
+            office_result = await icp_scoring.score_lead(client, "test-key", office)
+
+    assert residential_result.rubric == "residential"
+    assert office_result.rubric == "office"
+
+
+async def test_score_lead_ignores_llm_supplied_rubric_field() -> None:
+    """rubric is set deterministically in Python, never trusted from the
+    model's JSON — even if the model somehow echoed one back, our own
+    selection (based on lead.interests) must win."""
+    import json
+
+    lead = _lead(interests=["Executive Residences"])
+    spoofed = {**_VALID_RESPONSE, "rubric": "office"}
+    with respx.mock(base_url="https://openrouter.ai") as router:
+        router.post("/api/v1/chat/completions").mock(
+            return_value=_openrouter_response(json.dumps(spoofed))
+        )
+        async with httpx.AsyncClient() as client:
+            result = await icp_scoring.score_lead(client, "test-key", lead)
+
+    assert result.rubric == "residential"
