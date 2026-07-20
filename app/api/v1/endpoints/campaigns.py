@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.api.dependencies import SessionDep, require_role
+from app.api.dependencies import CurrentUserDep, SessionDep, require_role
 from app.models.campaign import Campaign
 from app.models.lead import PACK_PENDING, Lead
 from app.repositories import campaigns_repo, contact_activity_repo, leads_repo
@@ -31,6 +31,7 @@ from app.schemas.campaigns import (
     LeadCreateRequest,
     LeadOut,
     LeadsListResponse,
+    TriageUpdateRequest,
 )
 from app.schemas.responses import MessageResponse
 from app.services import (
@@ -63,9 +64,13 @@ def _campaign_out(campaign: Campaign) -> CampaignOut:
 
 
 def _lead_out(lead: Lead) -> LeadOut:
+    # engagement_score comes from model_validate (the persisted column, kept
+    # current by lead_service.py/email_event_ingest.py) — NOT recomputed live
+    # here. The Hot Leads queue sorts by that same persisted column in SQL;
+    # showing a fresher live-recomputed number would make the response
+    # inconsistent with the order it's presented in.
     out = LeadOut.model_validate(lead, from_attributes=True)
     out.pack_fulfilled = lead_scoring.pack_fulfilled(lead)
-    out.engagement_score = lead_scoring.engagement_score(lead)
     return out
 
 
@@ -194,6 +199,51 @@ async def list_leads(
     return LeadsListResponse(
         status_code=status.HTTP_200_OK, leads=[_lead_out(lead) for lead in leads], total=total
     )
+
+
+@router.get("/leads/hot", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+async def list_hot_leads(
+    session: SessionDep,
+    min_engagement: Annotated[int | None, Query(ge=0, le=100)] = None,
+    opened: Annotated[bool | None, Query()] = None,
+    clicked: Annotated[bool | None, Query()] = None,
+    uncontacted: Annotated[bool | None, Query()] = None,
+    triage_status: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> LeadsListResponse:
+    """Cross-campaign Hot Leads queue, ranked by persisted engagement_score —
+    every other lead endpoint here is scoped to one campaign; this is
+    deliberately not, so reps work one ranked list across NOG, website, and
+    any future source instead of switching views."""
+    leads = await leads_repo.list_hot(
+        session,
+        min_engagement=min_engagement, opened=opened, clicked=clicked,
+        uncontacted=uncontacted, triage_status=triage_status,
+        limit=limit, offset=offset,
+    )
+    total = await leads_repo.count_hot(
+        session,
+        min_engagement=min_engagement, opened=opened, clicked=clicked,
+        uncontacted=uncontacted, triage_status=triage_status,
+    )
+    return LeadsListResponse(
+        status_code=status.HTTP_200_OK, leads=[_lead_out(lead) for lead in leads], total=total
+    )
+
+
+@router.patch("/leads/{lead_id}/triage", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+async def update_lead_triage(
+    lead_id: int, body: TriageUpdateRequest, session: SessionDep, current_user: CurrentUserDep
+) -> LeadCaptureResponse:
+    """Record sales follow-up on the Hot Leads queue (contacted/dismissed/
+    snoozed) — independent of crm_sync_status/pack_delivery_status, which
+    track system delivery, not whether a human has actually followed up."""
+    lead = await leads_repo.get(session, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    lead = await leads_repo.set_triage(session, lead, status=body.status, by=current_user.email)
+    return LeadCaptureResponse(status_code=status.HTTP_200_OK, lead=_lead_out(lead))
 
 
 @router.delete(
