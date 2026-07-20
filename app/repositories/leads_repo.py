@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import Select, func, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import Delete
 
-from app.models.lead import CRM_SYNCED, PACK_SENT, Lead
+from app.models.lead import CRM_SYNCED, PACK_SENT, TRIAGE_NEW, Lead
 
 
 async def get(session: AsyncSession, lead_id: int) -> Lead | None:
@@ -39,6 +41,16 @@ async def delete(session: AsyncSession, lead: Lead) -> None:
     await session.commit()
 
 
+async def set_triage(session: AsyncSession, lead: Lead, *, status: str, by: str | None) -> Lead:
+    """Sales triage state on the Hot Leads queue — independent of
+    crm_sync_status/pack_delivery_status, which track system delivery, not
+    whether a human has actually followed up."""
+    lead.triage_status = status
+    lead.triage_at = datetime.now(UTC)
+    lead.triage_by = by
+    return await update(session, lead)
+
+
 async def delete_for_campaign(
     session: AsyncSession,
     campaign_id: int,
@@ -67,13 +79,19 @@ async def delete_for_campaign(
 def _apply_filters(
     stmt: Select | Delete,
     *,
-    campaign_id: int,
-    interest: str | None,
-    inspection: bool | None,
-    opt_in: bool | None,
-    sync_status: str | None,
+    campaign_id: int | None = None,
+    interest: str | None = None,
+    inspection: bool | None = None,
+    opt_in: bool | None = None,
+    sync_status: str | None = None,
+    min_engagement: int | None = None,
+    opened: bool | None = None,
+    clicked: bool | None = None,
+    uncontacted: bool | None = None,
+    triage_status: str | None = None,
 ) -> Select | Delete:
-    stmt = stmt.where(Lead.campaign_id == campaign_id)
+    if campaign_id is not None:
+        stmt = stmt.where(Lead.campaign_id == campaign_id)
     if interest is not None:
         stmt = stmt.where(Lead.interests.any(interest))
     if inspection is not None:
@@ -82,6 +100,19 @@ def _apply_filters(
         stmt = stmt.where(Lead.marketing_opt_in.is_(opt_in))
     if sync_status is not None:
         stmt = stmt.where(Lead.crm_sync_status == sync_status)
+    if min_engagement is not None:
+        stmt = stmt.where(Lead.engagement_score >= min_engagement)
+    if opened is not None:
+        stmt = stmt.where(Lead.pack_opened_count > 0 if opened else Lead.pack_opened_count == 0)
+    if clicked is not None:
+        has_clicks = func.coalesce(func.cardinality(Lead.pack_clicked_materials), 0) > 0
+        stmt = stmt.where(has_clicks if clicked else ~has_clicks)
+    if uncontacted is not None:
+        stmt = stmt.where(
+            Lead.triage_status == TRIAGE_NEW if uncontacted else Lead.triage_status != TRIAGE_NEW
+        )
+    if triage_status is not None:
+        stmt = stmt.where(Lead.triage_status == triage_status)
     return stmt
 
 
@@ -124,6 +155,54 @@ async def count_for_campaign(
         inspection=inspection,
         opt_in=opt_in,
         sync_status=sync_status,
+    )
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def list_hot(
+    session: AsyncSession,
+    *,
+    min_engagement: int | None = None,
+    opened: bool | None = None,
+    clicked: bool | None = None,
+    uncontacted: bool | None = None,
+    triage_status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Lead]:
+    """Cross-campaign Hot Leads queue, ranked by persisted engagement_score.
+
+    Unlike `list_for_campaign`, this is deliberately NOT scoped to one
+    campaign — the whole point is a single queue a rep can work across NOG,
+    website, and any future source without switching views."""
+    stmt = _apply_filters(
+        select(Lead),
+        min_engagement=min_engagement,
+        opened=opened,
+        clicked=clicked,
+        uncontacted=uncontacted,
+        triage_status=triage_status,
+    ).order_by(Lead.engagement_score.desc(), Lead.created_at.desc()).limit(limit).offset(offset)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def count_hot(
+    session: AsyncSession,
+    *,
+    min_engagement: int | None = None,
+    opened: bool | None = None,
+    clicked: bool | None = None,
+    uncontacted: bool | None = None,
+    triage_status: str | None = None,
+) -> int:
+    stmt = _apply_filters(
+        select(func.count()).select_from(Lead),
+        min_engagement=min_engagement,
+        opened=opened,
+        clicked=clicked,
+        uncontacted=uncontacted,
+        triage_status=triage_status,
     )
     return (await session.execute(stmt)).scalar_one()
 
