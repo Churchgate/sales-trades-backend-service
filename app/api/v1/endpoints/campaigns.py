@@ -209,6 +209,7 @@ async def list_hot_leads(
     clicked: Annotated[bool | None, Query()] = None,
     uncontacted: Annotated[bool | None, Query()] = None,
     triage_status: Annotated[str | None, Query()] = None,
+    icp_tier: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> LeadsListResponse:
@@ -219,13 +220,13 @@ async def list_hot_leads(
     leads = await leads_repo.list_hot(
         session,
         min_engagement=min_engagement, opened=opened, clicked=clicked,
-        uncontacted=uncontacted, triage_status=triage_status,
+        uncontacted=uncontacted, triage_status=triage_status, icp_tier=icp_tier,
         limit=limit, offset=offset,
     )
     total = await leads_repo.count_hot(
         session,
         min_engagement=min_engagement, opened=opened, clicked=clicked,
-        uncontacted=uncontacted, triage_status=triage_status,
+        uncontacted=uncontacted, triage_status=triage_status, icp_tier=icp_tier,
     )
     return LeadsListResponse(
         status_code=status.HTTP_200_OK, leads=[_lead_out(lead) for lead in leads], total=total

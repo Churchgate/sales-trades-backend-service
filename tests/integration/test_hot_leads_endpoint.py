@@ -88,6 +88,20 @@ async def test_list_hot_leads_filters_by_query_params(client_as, db_session):
     assert res.json()["total"] == 0
 
 
+async def test_list_hot_leads_filters_by_icp_tier(client_as, db_session):
+    _, _, nog_lead, web_lead = await _seed_two_campaigns(db_session)
+    nog_lead.icp_tier = "Tier 1"
+    web_lead.icp_tier = "Skip"
+    db_session.add_all([nog_lead, web_lead])
+    await db_session.commit()
+
+    async with client_as("admin") as c:
+        res = await c.get("/api/v1/campaigns/leads/hot", params={"icp_tier": "Tier 1"})
+    assert res.status_code == 200, res.text
+    ids = {row["id"] for row in res.json()["leads"]}
+    assert ids == {nog_lead.id}
+
+
 async def test_triage_update_requires_admin_role(client_as, db_session):
     _, _, nog_lead, _ = await _seed_two_campaigns(db_session)
     async with client_as("rep") as c:

@@ -89,6 +89,7 @@ def _apply_filters(
     clicked: bool | None = None,
     uncontacted: bool | None = None,
     triage_status: str | None = None,
+    icp_tier: str | None = None,
 ) -> Select | Delete:
     if campaign_id is not None:
         stmt = stmt.where(Lead.campaign_id == campaign_id)
@@ -113,6 +114,8 @@ def _apply_filters(
         )
     if triage_status is not None:
         stmt = stmt.where(Lead.triage_status == triage_status)
+    if icp_tier is not None:
+        stmt = stmt.where(Lead.icp_tier == icp_tier)
     return stmt
 
 
@@ -167,6 +170,7 @@ async def list_hot(
     clicked: bool | None = None,
     uncontacted: bool | None = None,
     triage_status: str | None = None,
+    icp_tier: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Lead]:
@@ -182,6 +186,7 @@ async def list_hot(
         clicked=clicked,
         uncontacted=uncontacted,
         triage_status=triage_status,
+        icp_tier=icp_tier,
     ).order_by(Lead.engagement_score.desc(), Lead.created_at.desc()).limit(limit).offset(offset)
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -195,6 +200,7 @@ async def count_hot(
     clicked: bool | None = None,
     uncontacted: bool | None = None,
     triage_status: str | None = None,
+    icp_tier: str | None = None,
 ) -> int:
     stmt = _apply_filters(
         select(func.count()).select_from(Lead),
@@ -203,6 +209,7 @@ async def count_hot(
         clicked=clicked,
         uncontacted=uncontacted,
         triage_status=triage_status,
+        icp_tier=icp_tier,
     )
     return (await session.execute(stmt)).scalar_one()
 
