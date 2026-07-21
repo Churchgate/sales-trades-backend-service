@@ -127,7 +127,12 @@ OUTPUT - STRICT JSON ONLY:
   "lead_tier": "",
   "trigger_event": "",
   "rationale": ""
-}}"""
+}}
+
+lead_tier MUST be exactly one of these four strings, verbatim: "Tier 1", \
+"Tier 2", "Tier 3", "Skip". Never write the parenthetical label (e.g. \
+"Monitor", "Hot lead", "Warm lead", "Disqualified") — those describe the \
+tier, they are not the field value."""
 
 # --- office rubric (company evaluating commercial space) ---
 
