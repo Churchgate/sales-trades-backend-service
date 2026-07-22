@@ -20,6 +20,7 @@ from app.jobs.tasks import (
     pack_delivery_job,
     reference_sync_job,
     task_sync_job,
+    triage_sync_job,
 )
 from app.services import reference_sync
 
@@ -102,6 +103,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             minutes=settings.pack_delivery_interval_minutes,
             kwargs={"state": app.state},
             id="pack_delivery",
+        )
+        scheduler.add_job(
+            triage_sync_job,
+            "interval",
+            minutes=settings.triage_sync_interval_minutes,
+            kwargs={"state": app.state},
+            id="triage_sync",
         )
         # Heavy per-contact fan-out (~430 NOG contacts); run once nightly like
         # deal_sync so it has the full night to finish. Gated by its own flag.

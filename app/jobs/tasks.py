@@ -13,6 +13,7 @@ from app.core.scheduler import (
     LOCK_KEY_PACK_DELIVERY,
     LOCK_KEY_REFERENCE_SYNC,
     LOCK_KEY_TASK_SYNC,
+    LOCK_KEY_TRIAGE_SYNC,
     run_with_advisory_lock,
 )
 from app.freshsales.client import FreshsalesClient
@@ -21,6 +22,7 @@ from app.services import (
     deal_sync,
     email_sync,
     lead_crm_sync,
+    lead_triage_sync,
     nog_activity_sync,
     pack_delivery,
     reference_sync,
@@ -100,3 +102,12 @@ async def nog_activity_sync_job(state: State) -> None:
         logger.info("nog activity sync job done", **counters)
 
     await run_with_advisory_lock(LOCK_KEY_NOG_ACTIVITY_SYNC, "nog_activity_sync", _run)
+
+
+async def triage_sync_job(state: State) -> None:
+    async def _run() -> None:
+        async with session_scope() as session, FreshsalesClient() as client:
+            advanced = await lead_triage_sync.sync_triage_from_crm(session, client)
+        logger.info("triage sync job done", advanced=advanced)
+
+    await run_with_advisory_lock(LOCK_KEY_TRIAGE_SYNC, "triage_sync", _run)
