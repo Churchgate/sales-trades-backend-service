@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # CSV-first (the guaranteed path) and flip this on once verified live.
     freshsales_lead_sync_enabled: bool = False
     lead_crm_sync_interval_minutes: int = 10
+    # Pull-back sync: advances triage_status when Freshsales' own last_contacted
+    # shows a rep already worked the lead directly in the CRM. Per-lead GET fan-out
+    # like nog_activity_sync, but scoped to still-`new` leads only, so the working
+    # set shrinks over time rather than re-scanning every synced lead.
+    triage_sync_interval_minutes: int = 30
     # NOG per-contact activity sync (calls/emails/meetings/notes for the NOG
     # Activities page). Heavy per-contact fan-out over ~430 contacts, so it runs
     # once nightly. Off by default — flip on once the contacts are assigned/synced.

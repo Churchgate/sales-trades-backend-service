@@ -36,6 +36,7 @@ logger = get_logger(__name__)
 # 400s. Verified live via GET /crm/sales/api/selector/lead_sources and
 # GET /crm/sales/api/settings/contacts/fields (field name `lifecycle_stage_id`).
 _NOG_2026_SLUG = "nog-2026"
+_WEBSITE_SLUG = "wtcabuja-website"
 _NOG_LEAD_SOURCE_ID = 17001007403
 _WEBSITE_LEAD_SOURCE_ID = 17001006640  # "Website" choice
 _LEAD_SOURCE_ID_BY_CAMPAIGN = {
@@ -44,6 +45,11 @@ _LEAD_SOURCE_ID_BY_CAMPAIGN = {
 # Every contact must carry a lifecycle stage; new captures start at "Inquiry
 # Stage" (position 1 of the dropdown) regardless of campaign.
 _INQUIRY_STAGE_ID = 18006136123
+# Website leads also get the system "Status" field set to "New" (contact_status_id,
+# choice id verified live via GET /crm/sales/api/settings/contacts/fields) — NOG
+# leads use the NOG-specific Lifecycle Stage field below instead, so this stays
+# scoped to the website campaign to avoid stepping on that.
+_WEBSITE_CONTACT_STATUS_NEW_ID = 17000261833
 
 
 def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
@@ -70,6 +76,10 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
             "cf_marketing_opt_in": lead.marketing_opt_in,
             "cf_consent": lead.consent_status,
             "cf_source": lead.source,
+            # Company-fit rating from scripts/score_leads_icp.py (null until that's
+            # run for this lead) — real field, verified live via
+            # GET /crm/sales/api/settings/contacts/fields (`cf_icp_score`, number).
+            "cf_icp_score": lead.icp_score,
         },
     }
     if campaign.slug == _NOG_2026_SLUG:
@@ -78,6 +88,8 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
         contact["custom_field"]["cf_lifecycle_stagenog_week"] = (
             "Nurturing" if pack_sent else "New"
         )
+    if campaign.slug == _WEBSITE_SLUG:
+        contact["contact_status_id"] = _WEBSITE_CONTACT_STATUS_NEW_ID
     return {"unique_identifier": {"emails": lead.email}, "contact": contact}
 
 

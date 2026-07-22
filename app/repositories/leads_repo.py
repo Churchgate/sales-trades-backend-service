@@ -227,6 +227,22 @@ async def list_pending_crm_sync(
     return list(result.scalars().all())
 
 
+async def list_untriaged_with_crm_contact(
+    session: AsyncSession, *, limit: int = 200
+) -> list[Lead]:
+    """Leads still at the default triage state but already pushed to Freshsales —
+    candidates for `lead_triage_sync` to check against the CRM's own
+    `last_contacted` signal (a rep may have called/emailed them directly in
+    Freshsales, bypassing our dashboard's "Mark contacted" action)."""
+    result = await session.execute(
+        select(Lead)
+        .where(Lead.triage_status == TRIAGE_NEW, Lead.crm_contact_id.isnot(None))
+        .order_by(Lead.created_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def list_pending_pack_delivery(
     session: AsyncSession, *, statuses: list[str], limit: int = 200
 ) -> list[Lead]:
