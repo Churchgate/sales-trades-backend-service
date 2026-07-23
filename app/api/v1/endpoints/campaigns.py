@@ -46,6 +46,10 @@ from app.services import (
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 _ADMIN_ROLES = ("admin", "superadmin")
+# Read-only Events access (Event Monitor / Hot Leads / NOG Activities) for reps —
+# they can see the same data admins see, but every mutating endpoint below
+# (campaign edits, resync, resend, triage, delete) stays admin/superadmin-only.
+_EVENTS_VIEW_ROLES = (*_ADMIN_ROLES, "rep")
 
 
 def _campaign_out(campaign: Campaign) -> CampaignOut:
@@ -84,7 +88,7 @@ async def _require_campaign(session: SessionDep, campaign_id: int) -> Campaign:
 # --- Admin: campaign management ---
 
 
-@router.get("", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+@router.get("", dependencies=[Depends(require_role(*_EVENTS_VIEW_ROLES))])
 async def list_campaigns(session: SessionDep) -> CampaignsListResponse:
     campaigns = await campaigns_repo.list_all(session)
     return CampaignsListResponse(
@@ -180,7 +184,7 @@ async def update_campaign(
     )
 
 
-@router.get("/{campaign_id}/leads", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+@router.get("/{campaign_id}/leads", dependencies=[Depends(require_role(*_EVENTS_VIEW_ROLES))])
 async def list_leads(
     campaign_id: int,
     session: SessionDep,
@@ -206,7 +210,7 @@ async def list_leads(
     )
 
 
-@router.get("/leads/hot", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+@router.get("/leads/hot", dependencies=[Depends(require_role(*_EVENTS_VIEW_ROLES))])
 async def list_hot_leads(
     session: SessionDep,
     min_engagement: Annotated[int | None, Query(ge=0, le=100)] = None,
@@ -324,7 +328,7 @@ async def bulk_delete_leads(
     return MessageResponse(status_code=status.HTTP_200_OK, message=f"Deleted {deleted} lead(s)")
 
 
-@router.get("/{campaign_id}/stats", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+@router.get("/{campaign_id}/stats", dependencies=[Depends(require_role(*_EVENTS_VIEW_ROLES))])
 async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStatsResponse:
     campaign = await _require_campaign(session, campaign_id)
     total = await leads_repo.count_for_campaign(session, campaign_id)
@@ -354,7 +358,7 @@ async def campaign_stats(campaign_id: int, session: SessionDep) -> CampaignStats
 _ACTIVITY_KINDS = ("call", "email", "meeting", "note")
 
 
-@router.get("/{campaign_id}/activities", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+@router.get("/{campaign_id}/activities", dependencies=[Depends(require_role(*_EVENTS_VIEW_ROLES))])
 async def campaign_activities(
     campaign_id: int,
     session: SessionDep,
@@ -417,7 +421,7 @@ async def campaign_activities(
 
 @router.get(
     "/{campaign_id}/leads/export.csv",
-    dependencies=[Depends(require_role(*_ADMIN_ROLES))],
+    dependencies=[Depends(require_role(*_EVENTS_VIEW_ROLES))],
 )
 async def export_leads_csv(campaign_id: int, session: SessionDep) -> Response:
     campaign = await _require_campaign(session, campaign_id)
