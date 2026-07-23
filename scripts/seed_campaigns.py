@@ -242,6 +242,10 @@ _EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
     # Applications are low-volume/high-intent — notify the team per lead (needs
     # CAMPAIGN_NOTIFICATION_EMAIL set; no-ops otherwise).
     "lead_notification": True,
+    # Still testing this campaign end-to-end — don't push test submissions into
+    # the live Freshsales pipeline yet. Leads still capture and land in the
+    # dashboard as normal; flip to True (or remove) once ready to go live.
+    "crm_sync_enabled": False,
     # Sent once, on first capture, to the applicant (campaign_mailer.py
     # build_application_confirmation_email/send_application_confirmation).
     # from_email must be a verified Sender Identity (or under an authenticated
@@ -260,13 +264,14 @@ _EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
         ],
         "contact_email": "Tradeservices@wtcabuja.com",
         "contact_phone": "09164793000",
-        "min_participants": 2,
-        # wtcabuja.com/export-launchpad/apply/ — the dedicated application
-        # subpage (not the old #apply in-page anchor).
-        "apply_url": "https://wtcabuja.com/export-launchpad/apply/",
         "response_days": 3,
         "slot_limit": 20,
-        "hero_url": _EMAIL_HERO,
+        # Export Launchpad's own hero (warehouse/logistics banner), not the
+        # shared WTC Abuja building shot other campaigns use.
+        "hero_url": (
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
+            "campaign-assets/Export%20LP%20EH.png"
+        ),
         "logo_url": _EMAIL_LOGO,
     },
 }
