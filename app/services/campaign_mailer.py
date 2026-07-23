@@ -768,6 +768,182 @@ async def send_viewing_booking(
         return False
 
 
+# ── Application confirmation (to lead) ──────────────────────────────────────
+# Sent once, on first capture, for campaigns that opt in via
+# config["application_confirmation"] — e.g. export-launchpad-2026, whose
+# applications have no materials/pack to deliver, so this is their only
+# lead-facing email. Distinct from build_lead_notification_email (staff-only).
+
+
+def build_application_confirmation_email(lead: Lead, campaign: Campaign) -> tuple[str, str, str]:
+    """(subject, html, text) confirming a received application to the applicant.
+
+    Copy lives in config["application_confirmation"]: subject, eligibility
+    criteria list, contact email/phone, apply_url (for the second-participant
+    prompt), min_participants, response_days. Falls back to Export Launchpad's
+    own defaults so a misconfigured campaign still sends something sane rather
+    than erroring.
+    """
+    config = campaign.config or {}
+    cfg = config.get("application_confirmation", {})
+    subject = cfg.get("subject", "Your WTC Abuja Application Has Been Received")
+    programme_name = cfg.get("programme_name", "the programme")
+    eligibility = cfg.get("eligibility", [])
+    contact_email = cfg.get("contact_email", "enquiries@wtcabuja.com")
+    contact_phone = cfg.get("contact_phone", "")
+    min_participants = cfg.get("min_participants")
+    apply_url = cfg.get("apply_url", "")
+    response_days = cfg.get("response_days", "a few")
+    slot_limit = cfg.get("slot_limit")
+    hero_url = cfg.get("hero_url", "")
+    logo_url = cfg.get("logo_url", "")
+    greeting = _greeting(lead)
+
+    # ── plain text ───────────────────────────────────────────────────────────
+    text_lines = [
+        greeting,
+        "",
+        f"Thank you for applying to {programme_name}. Your application has been "
+        "received, and our admissions team will now review it against our "
+        "eligibility criteria:",
+    ]
+    if eligibility:
+        text_lines += ["", *[f"  - {item}" for item in eligibility]]
+    text_lines += [
+        "",
+        "In the meantime, if you'd like to speak with a Trade Services "
+        "representative — whether you have questions about eligibility, the "
+        "programme structure, or the registration process — feel free to reach "
+        "out:",
+        "",
+        f"  Email: {contact_email}",
+    ]
+    if contact_phone:
+        text_lines.append(f"  Phone: {contact_phone}")
+    if min_participants and apply_url:
+        text_lines += [
+            "",
+            f"A reminder while you wait: registration is per company, with a "
+            f"minimum of {min_participants} participants required. If your second "
+            "representative hasn't yet submitted an application, please have them "
+            f"do so using the same link, quoting your company name so we can match "
+            f"your records: {apply_url}",
+        ]
+    text_lines += [
+        "",
+        f"We'll be in touch within {response_days} business days to confirm your "
+        "status."
+        + (f" Slots are limited to {slot_limit} companies for this cohort, so we "
+           "encourage prompt follow-through." if slot_limit else ""),
+        "",
+        "Warm regards,",
+        "WTC Abuja Team",
+    ]
+    text = "\n".join(text_lines) + "\n"
+
+    # ── HTML ─────────────────────────────────────────────────────────────────
+    eligibility_html = ""
+    if eligibility:
+        rows = "\n".join(
+            f"""\
+                  <tr>
+                    <td style="vertical-align:top;width:20px;padding:0 0 10px;">
+                      <span style="font-family:{_SANS};font-size:13px;color:{_C_GOLD_DK};">&#10003;</span>
+                    </td>
+                    <td style="vertical-align:top;padding:0 0 10px;">
+                      <p style="font-family:{_SANS};font-size:13px;color:{_C_INK_SOFT};line-height:1.5;margin:0;">{item}</p>
+                    </td>
+                  </tr>"""
+            for item in eligibility
+        )
+        eligibility_html = f"""\
+              <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 14px;padding-top:22px;border-top:1px solid {_C_LINE};">Eligibility criteria</p>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:8px;">
+{rows}
+              </table>"""
+
+    contact_html = f"""\
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:8px;">
+                <tr>
+                  <td style="background:{_C_PANEL};border-radius:3px;padding:22px 24px;">
+                    <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 8px;">Questions before we're in touch?</p>
+                    <p style="font-family:{_SANS};font-size:12px;color:{_C_INK_SOFT};line-height:1.6;margin:0 0 6px;">Reach a Trade Services representative directly — eligibility, programme structure, or registration.</p>
+                    <p style="font-family:{_SANS};font-size:13px;margin:0;">
+                      <a href="mailto:{contact_email}" style="color:{_C_GOLD_DK};font-weight:600;text-decoration:none;">{contact_email}</a>
+                      {f'&nbsp;&middot;&nbsp;<span style="color:{_C_INK_SOFT};">{contact_phone}</span>' if contact_phone else ""}
+                    </p>
+                  </td>
+                </tr>
+              </table>"""
+
+    reminder_html = ""
+    if min_participants and apply_url:
+        reminder_html = f"""\
+              <p style="font-family:{_SANS};font-size:12px;color:{_C_INK_SOFT};line-height:1.7;margin:20px 0 0;">A reminder while you wait: registration is per company, with a minimum of {min_participants} participants required. If your second representative hasn't yet submitted an application, please have them do so using the same link, quoting your company name so we can match your records:</p>
+              <p style="margin:10px 0 0;">{_c_button(apply_url, "Apply Now", gold=True)}</p>"""
+
+    status_html = (
+        f"We'll be in touch within {response_days} business days to confirm your status."
+        + (
+            f" Slots are limited to {slot_limit} companies for this cohort, so we "
+            "encourage prompt follow-through."
+            if slot_limit
+            else ""
+        )
+    )
+
+    body_html = f"""\
+              <p style="font-family:{_SANS};font-size:15px;color:{_C_INK};line-height:1.6;margin:0 0 8px;">{greeting}</p>
+              <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:0 0 4px;">Thank you for applying to {programme_name}. Your application has been received, and our admissions team will now review it against our eligibility criteria:</p>
+{eligibility_html}
+{contact_html}
+{reminder_html}
+              <p style="font-family:{_SANS};font-size:12px;color:{_C_INK_SOFT};line-height:1.7;margin:20px 0 0;padding-top:20px;border-top:1px solid {_C_LINE};">{status_html}</p>"""
+
+    _domain = (
+        f'<a href="https://wtcabuja.com" style="color:{_C_GOLD};text-decoration:none;">'
+        f"wtcabuja.com</a>"
+    )
+    footer_note = (
+        f"You are receiving this because you applied through {_domain}.<br>"
+        "World Trade Center Abuja &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
+    )
+    html = _HEAD + _c_shell(
+        tag="Application Received",
+        heading_html="Your application<br>has been received.",
+        body_html=body_html,
+        contact_lead_in="Can't wait? Reach us directly.",
+        footer_note_html=footer_note,
+        hero_url=hero_url,
+        logo_url=logo_url,
+    ) + "</html>"
+    return subject, html, text
+
+
+async def send_application_confirmation(
+    lead: Lead, campaign: Campaign, settings: Settings | None = None
+) -> bool:
+    """Best-effort application-confirmation email to the applicant. Never raises."""
+    settings = settings or get_settings()
+    cfg = (campaign.config or {}).get("application_confirmation", {})
+    try:
+        subject, html, text = build_application_confirmation_email(lead, campaign)
+        return await send_campaign_email(
+            to_email=lead.email,
+            subject=subject,
+            html=html,
+            text=text,
+            settings=settings,
+            from_email=cfg.get("from_email") or None,
+            from_name=cfg.get("from_name") or None,
+            lead_id=lead.id,
+            email_kind="application_confirmation",
+        )
+    except Exception:
+        logger.exception("application confirmation email failed", lead_id=lead.id)
+        return False
+
+
 # ── Post-event "reconnect" broadcast (to lead) ────────────────────────────────
 # A one-off follow-up to everyone captured at an event: a short recap (a single
 # hosted image in the body — no attachment) plus an invitation to book a tour.

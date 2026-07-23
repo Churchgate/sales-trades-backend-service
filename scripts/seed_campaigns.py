@@ -236,12 +236,39 @@ _WTC_WEBSITE_CONFIG: dict = {
 # from any future cohort's. No tag_map needed — every lead captured under this
 # campaign is by definition an Export Launchpad application. No materials/pack:
 # applications don't request documents, so pack_delivery_status stays
-# not_requested and no visitor email is sent.
+# not_requested; the applicant instead gets application_confirmation below.
 _EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
     "base_tags": ["Export Launchpad", "2026 First Cohort"],
     # Applications are low-volume/high-intent — notify the team per lead (needs
     # CAMPAIGN_NOTIFICATION_EMAIL set; no-ops otherwise).
     "lead_notification": True,
+    # Sent once, on first capture, to the applicant (campaign_mailer.py
+    # build_application_confirmation_email/send_application_confirmation).
+    # from_email must be a verified Sender Identity (or under an authenticated
+    # domain) in the WTC_SENDGRID account or sends 403 — confirm Tradeservices@
+    # wtcabuja.com is verified there before this goes live; falls back to
+    # EVENT_MAIL_FROM_EMAIL/MAIL_FROM_EMAIL otherwise.
+    "application_confirmation": {
+        "subject": "Your WTC Abuja Application Has Been Received",
+        "programme_name": "the Export Launchpad Bootcamp",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "eligibility": [
+            "Valid CAC business registration",
+            "A product or service currently sold in the Nigerian market",
+            "Clear intent to begin exporting within the next 6–12 months",
+        ],
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "min_participants": 2,
+        # wtcabuja.com/export-launchpad/apply/ — the dedicated application
+        # subpage (not the old #apply in-page anchor).
+        "apply_url": "https://wtcabuja.com/export-launchpad/apply/",
+        "response_days": 3,
+        "slot_limit": 20,
+        "hero_url": _EMAIL_HERO,
+        "logo_url": _EMAIL_LOGO,
+    },
 }
 
 CAMPAIGNS: list[dict] = [
