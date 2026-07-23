@@ -262,7 +262,12 @@ _EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
         "contact_phone": "09164793000",
         "response_days": 3,
         "slot_limit": 20,
-        "hero_url": _EMAIL_HERO,
+        # Export Launchpad's own hero (warehouse/logistics banner), not the
+        # shared WTC Abuja building shot other campaigns use.
+        "hero_url": (
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
+            "campaign-assets/Export%20LP%20EH.png"
+        ),
         "logo_url": _EMAIL_LOGO,
     },
 }

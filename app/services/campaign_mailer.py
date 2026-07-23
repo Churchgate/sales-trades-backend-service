@@ -424,7 +424,11 @@ def _c_header(tag: str, heading_html: str, hero_url: str, logo_url: str) -> str:
         </tr>"""
 
 
-def _c_footer(contact_lead_in: str, footer_note_html: str) -> str:
+def _c_footer(
+    contact_lead_in: str,
+    footer_note_html: str,
+    footer_email: str = "enquiries@wtcabuja.com",
+) -> str:
     return f"""\
         <tr>
           <td style="background:{_C_STRIP};padding:24px 48px;">
@@ -432,7 +436,7 @@ def _c_footer(contact_lead_in: str, footer_note_html: str) -> str:
               <tr>
                 <td style="vertical-align:middle;">
                   <p style="font-family:{_SANS};font-size:11px;color:#8f8f8b;margin:0 0 4px;">{contact_lead_in}</p>
-                  <a href="mailto:enquiries@wtcabuja.com" style="font-family:{_SANS};font-size:12px;color:{_C_GOLD};font-weight:600;text-decoration:none;">enquiries@wtcabuja.com</a>
+                  <a href="mailto:{footer_email}" style="font-family:{_SANS};font-size:12px;color:{_C_GOLD};font-weight:600;text-decoration:none;">{footer_email}</a>
                 </td>
                 <td align="right" style="vertical-align:middle;">
                   <a href="https://wtcabuja.com" style="font-family:{_SANS};font-size:8px;letter-spacing:0.1em;text-transform:uppercase;color:{_C_GOLD};text-decoration:none;">wtcabuja.com</a>
@@ -449,7 +453,8 @@ def _c_footer(contact_lead_in: str, footer_note_html: str) -> str:
 
 
 def _c_shell(*, tag: str, heading_html: str, body_html: str, contact_lead_in: str,
-             footer_note_html: str, hero_url: str, logo_url: str) -> str:
+             footer_note_html: str, hero_url: str, logo_url: str,
+             footer_email: str = "enquiries@wtcabuja.com") -> str:
     """Wrap the header + body + footer in the cream outer shell."""
     return f"""\
 <body style="margin:0;padding:0;background:{_C_CREAM};">
@@ -463,7 +468,7 @@ def _c_shell(*, tag: str, heading_html: str, body_html: str, contact_lead_in: st
 {body_html}
             </td>
           </tr>
-{_c_footer(contact_lead_in, footer_note_html)}
+{_c_footer(contact_lead_in, footer_note_html, footer_email)}
         </table>
       </td>
     </tr>
@@ -891,7 +896,7 @@ def build_application_confirmation_email(
     )
     footer_note = (
         f"You are receiving this because you applied through {_domain}.<br>"
-        "World Trade Center Abuja &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
+        "WTC Abuja Trade Services &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
     )
     html = _HEAD + _c_shell(
         tag="Application Received",
@@ -901,6 +906,7 @@ def build_application_confirmation_email(
         footer_note_html=footer_note,
         hero_url=hero_url,
         logo_url=logo_url,
+        footer_email=contact_email,
     ) + "</html>"
     return subject, html, text
 
