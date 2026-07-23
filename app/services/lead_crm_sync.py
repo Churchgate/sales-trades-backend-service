@@ -93,6 +93,41 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
     return {"unique_identifier": {"emails": lead.email}, "contact": contact}
 
 
+def build_second_participant_contact_payload(
+    lead: Lead, campaign: Campaign
+) -> dict[str, Any] | None:
+    """Contact payload for a lead's second participant (e.g. Export Launchpad's
+    two-seats-per-company applications), stored in responses.second_participant.
+    Returns None when there's no second participant or they gave no email
+    (Freshsales contacts are deduped/looked-up by email, so one is required).
+    """
+    second = (lead.responses or {}).get("second_participant") or {}
+    email = second.get("email")
+    if not email:
+        return None
+    contact: dict[str, Any] = {
+        "first_name": second.get("first_name") or "",
+        "last_name": second.get("last_name") or "",
+        "emails": [{"value": email, "is_primary": True}],
+        "mobile_number": second.get("phone"),
+        "job_title": second.get("job_title"),
+        "tags": [*(lead.tags or []), "Second Participant"],
+        "lead_source_id": _LEAD_SOURCE_ID_BY_CAMPAIGN.get(
+            campaign.slug, _WEBSITE_LEAD_SOURCE_ID
+        ),
+        "lifecycle_stage_id": _INQUIRY_STAGE_ID,
+        "custom_field": {
+            # Same company as the primary applicant so both contacts are
+            # findable/grouped together in Freshsales.
+            "cf_company": lead.company,
+            "cf_campaign": campaign.slug,
+            "cf_source": lead.source,
+            "cf_consent": lead.consent_status,
+        },
+    }
+    return {"unique_identifier": {"emails": email}, "contact": contact}
+
+
 # Freshsales rejects contact_status_id for some contacts with this 400, for reasons
 # that don't correlate with anything in our payload (observed on both a brand-new
 # contact and a years-old pre-existing one, with no pattern distinguishing them from
@@ -161,6 +196,21 @@ async def sync_lead(
         logger.warning("lead crm sync failed", lead_id=lead.id, error=str(exc))
         lead.crm_sync_status = CRM_FAILED
         lead.crm_error = str(exc)[:500]
+
+    # Second participant (if any) gets pushed as their own Freshsales contact,
+    # tagged/linked to the same company. Best-effort and independent of the
+    # primary contact's outcome above — no dedicated status field on Lead for
+    # it, since Freshsales upsert-by-email is idempotent and this just re-runs
+    # harmlessly on the next sync pass if it fails.
+    second_payload = build_second_participant_contact_payload(lead, campaign)
+    if second_payload is not None:
+        try:
+            await _upsert_contact_with_status_fallback(client, second_payload)
+        except Exception as exc:  # noqa: BLE001 — never block the primary sync
+            logger.warning(
+                "second participant crm sync failed", lead_id=lead.id, error=str(exc)
+            )
+
     return await leads_repo.update(session, lead)
 
 
