@@ -230,6 +230,22 @@ _WTC_WEBSITE_CONFIG: dict = {
     },
 }
 
+# WTCA Trade Services programmes (Export Launchpad Boot Camp is the first).
+# One always-on campaign for the whole Trade Services channel: each programme's
+# application form submits its programme slug in `interests`, mapped to a CRM
+# tag below — so a new programme is a new tag_map entry + re-seed, not a new
+# campaign. No materials/pack: applications don't request documents, so
+# pack_delivery_status stays not_requested and no visitor email is sent.
+_TRADE_SERVICES_CONFIG: dict = {
+    "base_tags": ["Trade Services"],
+    "tag_map": {
+        "export-launchpad": "Export Launchpad",
+    },
+    # Programme applications are low-volume/high-intent — notify the team per
+    # lead (needs CAMPAIGN_NOTIFICATION_EMAIL set; no-ops otherwise).
+    "lead_notification": True,
+}
+
 CAMPAIGNS: list[dict] = [
     {
         "slug": "nog-2026",
@@ -248,6 +264,15 @@ CAMPAIGNS: list[dict] = [
         "ends_on": date(2056, 7, 9),  # "always on" — the public site has no end date
         "timezone": "Africa/Lagos",
         "config": _WTC_WEBSITE_CONFIG,
+    },
+    {
+        "slug": "trade-services",
+        "name": "WTCA Trade Services",
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 7, 23),
+        "ends_on": date(2056, 1, 1),  # "always on" — programme channel has no end date
+        "timezone": "Africa/Lagos",
+        "config": _TRADE_SERVICES_CONFIG,
     },
 ]
 
