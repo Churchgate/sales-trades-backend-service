@@ -131,7 +131,12 @@ async def sync_lead(
 ) -> Lead:
     """Push one lead to Freshsales, recording the outcome on the lead. Never raises."""
     settings = settings or get_settings()
-    if not settings.freshsales_lead_sync_enabled:
+    # Per-campaign kill switch (campaign.config["crm_sync_enabled"] = False) for
+    # campaigns still in test/QA — e.g. export-launchpad-2026 while it's being
+    # validated, so test submissions don't pollute the live Freshsales pipeline.
+    # Absent/true means synced as normal; only an explicit False skips it.
+    campaign_sync_enabled = (campaign.config or {}).get("crm_sync_enabled", True)
+    if not settings.freshsales_lead_sync_enabled or not campaign_sync_enabled:
         lead.crm_sync_status = CRM_SKIPPED
         return await leads_repo.update(session, lead)
 

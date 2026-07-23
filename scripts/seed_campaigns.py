@@ -242,6 +242,10 @@ _EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
     # Applications are low-volume/high-intent — notify the team per lead (needs
     # CAMPAIGN_NOTIFICATION_EMAIL set; no-ops otherwise).
     "lead_notification": True,
+    # Still testing this campaign end-to-end — don't push test submissions into
+    # the live Freshsales pipeline yet. Leads still capture and land in the
+    # dashboard as normal; flip to True (or remove) once ready to go live.
+    "crm_sync_enabled": False,
     # Sent once, on first capture, to the applicant (campaign_mailer.py
     # build_application_confirmation_email/send_application_confirmation).
     # from_email must be a verified Sender Identity (or under an authenticated
