@@ -93,6 +93,34 @@ def build_contact_payload(lead: Lead, campaign: Campaign) -> dict[str, Any]:
     return {"unique_identifier": {"emails": lead.email}, "contact": contact}
 
 
+# Freshsales rejects contact_status_id for some contacts with this 400, for reasons
+# that don't correlate with anything in our payload (observed on both a brand-new
+# contact and a years-old pre-existing one, with no pattern distinguishing them from
+# contacts the exact same id writes fine on). It's an optional, cosmetic field —
+# never worth losing the whole contact sync over, so on this specific error we
+# retry once without it rather than failing the lead's CRM sync outright.
+_CONTACT_STATUS_ERROR_MARKER = "Invalid contact status provided"
+
+
+async def _upsert_contact_with_status_fallback(
+    client: FreshsalesClient, payload: dict[str, Any]
+) -> dict[str, Any]:
+    contact_body = payload["contact"]
+    try:
+        return await client.upsert_contact(payload)
+    except httpx.HTTPStatusError as exc:
+        if "contact_status_id" not in contact_body or (
+            _CONTACT_STATUS_ERROR_MARKER not in exc.response.text
+        ):
+            raise
+        logger.warning(
+            "contact_status_id rejected by Freshsales, retrying without it",
+            error=exc.response.text[:200],
+        )
+        retry_contact = {k: v for k, v in contact_body.items() if k != "contact_status_id"}
+        return await client.upsert_contact({**payload, "contact": retry_contact})
+
+
 async def sync_lead(
     session: AsyncSession,
     lead: Lead,
@@ -108,7 +136,9 @@ async def sync_lead(
         return await leads_repo.update(session, lead)
 
     try:
-        contact = await client.upsert_contact(build_contact_payload(lead, campaign))
+        contact = await _upsert_contact_with_status_fallback(
+            client, build_contact_payload(lead, campaign)
+        )
         contact_id = contact.get("id")
         lead.crm_contact_id = str(contact_id) if contact_id is not None else None
         lead.crm_sync_status = CRM_SYNCED
