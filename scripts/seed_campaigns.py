@@ -230,6 +230,47 @@ _WTC_WEBSITE_CONFIG: dict = {
     },
 }
 
+# Export Launchpad Boot Camp — 2026 first cohort. Cohort-scoped campaign (same
+# shape as _NOG_2026_CONFIG above: one campaign per cohort/event, not a shared
+# multi-programme bucket) so this cohort's applications are cleanly separable
+# from any future cohort's. No tag_map needed — every lead captured under this
+# campaign is by definition an Export Launchpad application. No materials/pack:
+# applications don't request documents, so pack_delivery_status stays
+# not_requested; the applicant instead gets application_confirmation below.
+_EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
+    "base_tags": ["Export Launchpad", "2026 First Cohort"],
+    # Applications are low-volume/high-intent — notify the team per lead (needs
+    # CAMPAIGN_NOTIFICATION_EMAIL set; no-ops otherwise).
+    "lead_notification": True,
+    # Sent once, on first capture, to the applicant (campaign_mailer.py
+    # build_application_confirmation_email/send_application_confirmation).
+    # from_email must be a verified Sender Identity (or under an authenticated
+    # domain) in the WTC_SENDGRID account or sends 403 — confirm Tradeservices@
+    # wtcabuja.com is verified there before this goes live; falls back to
+    # EVENT_MAIL_FROM_EMAIL/MAIL_FROM_EMAIL otherwise.
+    "application_confirmation": {
+        "subject": "Your WTC Abuja Application Has Been Received",
+        "programme_name": "the Export Launchpad Bootcamp",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "eligibility": [
+            "Valid CAC business registration",
+            "A product or service currently sold in the Nigerian market",
+            "Clear intent to begin exporting within the next 6–12 months",
+        ],
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "min_participants": 2,
+        # wtcabuja.com/export-launchpad/apply/ — the dedicated application
+        # subpage (not the old #apply in-page anchor).
+        "apply_url": "https://wtcabuja.com/export-launchpad/apply/",
+        "response_days": 3,
+        "slot_limit": 20,
+        "hero_url": _EMAIL_HERO,
+        "logo_url": _EMAIL_LOGO,
+    },
+}
+
 CAMPAIGNS: list[dict] = [
     {
         "slug": "nog-2026",
@@ -248,6 +289,15 @@ CAMPAIGNS: list[dict] = [
         "ends_on": date(2056, 7, 9),  # "always on" — the public site has no end date
         "timezone": "Africa/Lagos",
         "config": _WTC_WEBSITE_CONFIG,
+    },
+    {
+        "slug": "export-launchpad-2026",
+        "name": "Export Launchpad Boot Camp 2026 — First Cohort",
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 7, 23),
+        "ends_on": date(2026, 8, 20),  # cohort date — not "always on" like the website campaign
+        "timezone": "Africa/Lagos",
+        "config": _EXPORT_LAUNCHPAD_2026_CONFIG,
     },
 ]
 
