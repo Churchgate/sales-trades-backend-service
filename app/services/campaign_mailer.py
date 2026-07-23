@@ -775,14 +775,17 @@ async def send_viewing_booking(
 # lead-facing email. Distinct from build_lead_notification_email (staff-only).
 
 
-def build_application_confirmation_email(lead: Lead, campaign: Campaign) -> tuple[str, str, str]:
+def build_application_confirmation_email(
+    lead: Lead, campaign: Campaign, greeting_name: str | None = None
+) -> tuple[str, str, str]:
     """(subject, html, text) confirming a received application to the applicant.
 
     Copy lives in config["application_confirmation"]: subject, eligibility
-    criteria list, contact email/phone, apply_url (for the second-participant
-    prompt), min_participants, response_days. Falls back to Export Launchpad's
-    own defaults so a misconfigured campaign still sends something sane rather
-    than erroring.
+    criteria list, contact email/phone, response_days. Falls back to Export
+    Launchpad's own defaults so a misconfigured campaign still sends something
+    sane rather than erroring. ``greeting_name`` overrides the lead's own name
+    in the salutation — used when this same email is also sent to the second
+    participant.
     """
     config = campaign.config or {}
     cfg = config.get("application_confirmation", {})
@@ -791,13 +794,11 @@ def build_application_confirmation_email(lead: Lead, campaign: Campaign) -> tupl
     eligibility = cfg.get("eligibility", [])
     contact_email = cfg.get("contact_email", "enquiries@wtcabuja.com")
     contact_phone = cfg.get("contact_phone", "")
-    min_participants = cfg.get("min_participants")
-    apply_url = cfg.get("apply_url", "")
     response_days = cfg.get("response_days", "a few")
     slot_limit = cfg.get("slot_limit")
     hero_url = cfg.get("hero_url", "")
     logo_url = cfg.get("logo_url", "")
-    greeting = _greeting(lead)
+    greeting = f"Hello {greeting_name}," if greeting_name else _greeting(lead)
 
     # ── plain text ───────────────────────────────────────────────────────────
     text_lines = [
@@ -820,15 +821,6 @@ def build_application_confirmation_email(lead: Lead, campaign: Campaign) -> tupl
     ]
     if contact_phone:
         text_lines.append(f"  Phone: {contact_phone}")
-    if min_participants and apply_url:
-        text_lines += [
-            "",
-            f"A reminder while you wait: registration is per company, with a "
-            f"minimum of {min_participants} participants required. If your second "
-            "representative hasn't yet submitted an application, please have them "
-            f"do so using the same link, quoting your company name so we can match "
-            f"your records: {apply_url}",
-        ]
     text_lines += [
         "",
         f"We'll be in touch within {response_days} business days to confirm your "
@@ -876,12 +868,6 @@ def build_application_confirmation_email(lead: Lead, campaign: Campaign) -> tupl
                 </tr>
               </table>"""
 
-    reminder_html = ""
-    if min_participants and apply_url:
-        reminder_html = f"""\
-              <p style="font-family:{_SANS};font-size:12px;color:{_C_INK_SOFT};line-height:1.7;margin:20px 0 0;">A reminder while you wait: registration is per company, with a minimum of {min_participants} participants required. If your second representative hasn't yet submitted an application, please have them do so using the same link, quoting your company name so we can match your records:</p>
-              <p style="margin:10px 0 0;">{_c_button(apply_url, "Apply Now", gold=True)}</p>"""
-
     status_html = (
         f"We'll be in touch within {response_days} business days to confirm your status."
         + (
@@ -897,7 +883,6 @@ def build_application_confirmation_email(lead: Lead, campaign: Campaign) -> tupl
               <p style="font-family:{_SANS};font-size:14px;color:{_C_INK_SOFT};line-height:1.7;margin:0 0 4px;">Thank you for applying to {programme_name}. Your application has been received, and our admissions team will now review it against our eligibility criteria:</p>
 {eligibility_html}
 {contact_html}
-{reminder_html}
               <p style="font-family:{_SANS};font-size:12px;color:{_C_INK_SOFT};line-height:1.7;margin:20px 0 0;padding-top:20px;border-top:1px solid {_C_LINE};">{status_html}</p>"""
 
     _domain = (
@@ -928,7 +913,7 @@ async def send_application_confirmation(
     cfg = (campaign.config or {}).get("application_confirmation", {})
     try:
         subject, html, text = build_application_confirmation_email(lead, campaign)
-        return await send_campaign_email(
+        ok = await send_campaign_email(
             to_email=lead.email,
             subject=subject,
             html=html,
@@ -939,6 +924,26 @@ async def send_application_confirmation(
             lead_id=lead.id,
             email_kind="application_confirmation",
         )
+
+        second = (lead.responses or {}).get("second_participant") or {}
+        second_email = second.get("email")
+        if second_email:
+            second_subject, second_html, second_text = build_application_confirmation_email(
+                lead, campaign, greeting_name=second.get("first_name")
+            )
+            await send_campaign_email(
+                to_email=second_email,
+                subject=second_subject,
+                html=second_html,
+                text=second_text,
+                settings=settings,
+                from_email=cfg.get("from_email") or None,
+                from_name=cfg.get("from_name") or None,
+                lead_id=lead.id,
+                email_kind="application_confirmation",
+            )
+
+        return ok
     except Exception:
         logger.exception("application confirmation email failed", lead_id=lead.id)
         return False

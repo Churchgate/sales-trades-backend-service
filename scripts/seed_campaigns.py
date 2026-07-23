@@ -260,10 +260,6 @@ _EXPORT_LAUNCHPAD_2026_CONFIG: dict = {
         ],
         "contact_email": "Tradeservices@wtcabuja.com",
         "contact_phone": "09164793000",
-        "min_participants": 2,
-        # wtcabuja.com/export-launchpad/apply/ — the dedicated application
-        # subpage (not the old #apply in-page anchor).
-        "apply_url": "https://wtcabuja.com/export-launchpad/apply/",
         "response_days": 3,
         "slot_limit": 20,
         "hero_url": _EMAIL_HERO,
