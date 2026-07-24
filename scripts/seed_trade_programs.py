@@ -20,6 +20,11 @@ from app.models.trade_program import KIND_BOOT_CAMP, STATUS_ACTIVE, TradeProgram
 # Required-document list for the (deferred) eligibility-submission phase —
 # collected via wtcabuja.com itself, not a dashboard-minted link. Carried in
 # config now so the later phase has a single place to read it from.
+_EMAIL_LOGO = (
+    "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
+    "campaign-assets/Abuja_WTC-LOGO_HORZ-white.png"
+)
+
 _EXPORT_LAUNCHPAD_REQUIRED_DOCUMENTS = [
     {"key": "cac_certificate", "label": "CAC Certificate", "required": True},
     {"key": "logo", "label": "Company Logo", "required": True},
@@ -37,6 +42,37 @@ _EXPORT_LAUNCHPAD_CONFIG = {
         "E-Commerce", "ESG", "Finance and Tax", "Managing a Global Workforce",
         "Tariff Playbook", "Supply Chain", "Export Bootcamp", "Other",
     ],
+    # Still testing this program end-to-end (matches the crm_sync_enabled=False
+    # stance the export-launchpad-2026 CAMPAIGN was seeded with in
+    # scripts/seed_campaigns.py) — don't push registrations into the live
+    # Freshsales pipeline yet. Flip to True (or remove) once ready to go live.
+    "crm_sync_enabled": False,
+    # Sent once, on first capture, to each participant with an email address
+    # (services/trade_mailer.py). from_email must be a verified Sender
+    # Identity in the WTC_SENDGRID account or sends 403 — confirm
+    # Tradeservices@wtcabuja.com is verified there before this goes live;
+    # falls back to EVENT_MAIL_FROM_EMAIL/MAIL_FROM_EMAIL otherwise. Copy
+    # mirrors the campaign-era config this replaces (scripts/seed_campaigns.py).
+    "application_confirmation": {
+        "subject": "Your WTC Abuja Application Has Been Received",
+        "programme_name": "the Export Launchpad Bootcamp",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "eligibility": [
+            "Valid CAC business registration",
+            "A product or service currently sold in the Nigerian market",
+            "Clear intent to begin exporting within the next 6-12 months",
+        ],
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "response_days": 3,
+        "slot_limit": 20,
+        "hero_url": (
+            "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
+            "campaign-assets/Export%20LP%20EH.png"
+        ),
+        "logo_url": _EMAIL_LOGO,
+    },
 }
 
 PROGRAMS: list[dict] = [

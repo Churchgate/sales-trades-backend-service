@@ -74,7 +74,13 @@ async def sync_trade_lead(
 ) -> TradeLead:
     """Push one participant to Freshsales, recording the outcome. Never raises."""
     settings = settings or get_settings()
-    if not settings.freshsales_lead_sync_enabled:
+    # Per-program kill switch (program.config["crm_sync_enabled"] = False),
+    # mirroring lead_crm_sync.py's campaign-level one — Export Launchpad is
+    # still being validated end-to-end, so test submissions shouldn't hit the
+    # live Freshsales pipeline yet. Absent/true means synced as normal; only
+    # an explicit False skips it.
+    program_sync_enabled = (program.config or {}).get("crm_sync_enabled", True)
+    if not settings.freshsales_lead_sync_enabled or not program_sync_enabled:
         lead.crm_sync_status = CRM_SKIPPED
         return await trade_repo.update_lead(session, lead)
 
