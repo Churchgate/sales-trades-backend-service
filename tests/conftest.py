@@ -32,6 +32,8 @@ _TABLES = (
     "email_events",
     "leads",
     "campaigns",
+    "trade_leads",
+    "trade_programs",
     "bookings",
     "rooms",
     "deal_events",

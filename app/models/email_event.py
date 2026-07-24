@@ -28,12 +28,20 @@ class EmailEvent(SQLModel, table=True):
     __table_args__ = (
         Index("idx_email_events_lead", "lead_id", "occurred_at"),
         Index("idx_email_events_sg_event_id", "sg_event_id", unique=True),
+        Index("idx_email_events_trade_lead", "trade_lead_id"),
     )
 
     id: int | None = Field(
         default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
     )
     lead_id: int = Field(sa_column=Column(BigInteger, ForeignKey("leads.id"), nullable=False))
+    # Set when this event's lead was migrated to the Trade tables (see
+    # scripts/transfer_export_launchpad.py) — re-points open/click history at
+    # the new trade_leads row without losing the original `lead_id`.
+    trade_lead_id: int | None = Field(
+        default=None,
+        sa_column=Column(BigInteger, ForeignKey("trade_leads.id"), nullable=True),
+    )
     email_kind: str | None = None  # "pack" | "viewing" — which email this event is about
     event_type: str = Field(sa_column=Column(String, nullable=False))
     # Resolved document label (e.g. "Corporate Prospectus") for a `click` event whose
