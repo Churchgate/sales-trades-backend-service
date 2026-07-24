@@ -98,6 +98,11 @@ def contact_upsert() -> str:
     return "/crm/sales/api/contacts/upsert"
 
 
+def contact_delete(contact_id: int) -> str:
+    """Permanently delete a contact. No response body on success (204)."""
+    return f"/crm/sales/api/contacts/{contact_id}"
+
+
 # --- Contact activity (read — NOG per-contact activity sync) ---
 
 
