@@ -13,6 +13,7 @@ from app.core.scheduler import (
     LOCK_KEY_PACK_DELIVERY,
     LOCK_KEY_REFERENCE_SYNC,
     LOCK_KEY_TASK_SYNC,
+    LOCK_KEY_TRADE_CRM_SYNC,
     LOCK_KEY_TRIAGE_SYNC,
     run_with_advisory_lock,
 )
@@ -27,6 +28,7 @@ from app.services import (
     pack_delivery,
     reference_sync,
     task_sync,
+    trade_crm_sync,
 )
 
 logger = get_logger(__name__)
@@ -111,3 +113,12 @@ async def triage_sync_job(state: State) -> None:
         logger.info("triage sync job done", advanced=advanced)
 
     await run_with_advisory_lock(LOCK_KEY_TRIAGE_SYNC, "triage_sync", _run)
+
+
+async def trade_crm_sync_job(state: State) -> None:
+    async def _run() -> None:
+        async with session_scope() as session:
+            synced = await trade_crm_sync.sync_pending_trade(session)
+        logger.info("trade crm sync job done", synced=synced)
+
+    await run_with_advisory_lock(LOCK_KEY_TRADE_CRM_SYNC, "trade_crm_sync", _run)
