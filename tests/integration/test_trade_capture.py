@@ -3,6 +3,8 @@ endpoint. Driven over HTTP (unauthenticated) so validation, dedup-merge, and
 the primary/2nd-participant split all run exactly as the live form hits it.
 """
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,6 +104,37 @@ async def test_register_resubmit_merges_instead_of_duplicating(client, db_sessio
         second.json()["registration"]["participants"][0]["id"]
     )
     assert second.json()["registration"]["participants"][0]["job_title"] == "Founder"
+
+
+async def test_register_sends_confirmation_only_on_new_registration(
+    client, db_session, monkeypatch
+):
+    """Gated the same way campaigns.py gates the campaign-era version of this
+    email: fires once on a genuinely new registration, never on an idempotent
+    resubmit — otherwise a flaky-retry would spam the applicant."""
+    mock_send = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.trade.trade_mailer.send_application_confirmation", mock_send
+    )
+    await trade_repo.create_program(
+        db_session,
+        TradeProgram(
+            slug="export-launchpad-2026",
+            name="Export Launchpad",
+            status=STATUS_ACTIVE,
+            config={"application_confirmation": {"subject": "Received"}},
+        ),
+    )
+    async with client as c:
+        first = await c.post(
+            "/api/v1/trade/programs/export-launchpad-2026/register", json=_payload()
+        )
+        second = await c.post(
+            "/api/v1/trade/programs/export-launchpad-2026/register", json=_payload()
+        )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    mock_send.assert_awaited_once()
 
 
 async def test_register_404_for_unknown_program(client, db_session):

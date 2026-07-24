@@ -29,7 +29,7 @@ from app.schemas.trade import (
     TradeRegistrationDetailResponse,
     TradeRegistrationOut,
 )
-from app.services import trade_capture, trade_crm_sync
+from app.services import trade_capture, trade_crm_sync, trade_mailer
 
 router = APIRouter(prefix="/trade", tags=["trade"])
 
@@ -86,6 +86,12 @@ async def register(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except trade_capture.ProgramInactiveError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    # Only on a genuinely new registration — an idempotent resubmit (same
+    # email retried) must not re-send the confirmation. Gated the same way
+    # campaigns.py gates the campaign-era version of this email.
+    if created and (program.config or {}).get("application_confirmation"):
+        await trade_mailer.send_application_confirmation(participants, program)
 
     return TradeRegistrationCaptureResponse(
         status_code=status.HTTP_201_CREATED,
