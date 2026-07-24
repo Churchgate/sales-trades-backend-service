@@ -35,6 +35,12 @@ _EXPORT_LAUNCHPAD_REQUIRED_DOCUMENTS = [
 _EXPORT_LAUNCHPAD_CONFIG = {
     "email_template": "export_launchpad_confirmation",  # distinct from the campaign templates
     "required_documents": _EXPORT_LAUNCHPAD_REQUIRED_DOCUMENTS,
+    # Freshsales tags pushed on every synced contact — matches what the
+    # original campaign-era registrations already carry live in CRM (verified
+    # on Amaka Eze's contact, the one real pre-Trade registration), so the
+    # cohort stays under one consistent tag set rather than splitting across
+    # an old and a new naming scheme. See services/trade_capture.py.
+    "base_tags": ["Export Launchpad", "2026 First Cohort", "export-launchpad"],
     "company_founded_options": [
         "Less than 2 years", "2-5 years", "5-9 years", "10-20 years", "More than 20 years",
     ],

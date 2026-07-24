@@ -137,6 +137,37 @@ async def test_register_sends_confirmation_only_on_new_registration(
     mock_send.assert_awaited_once()
 
 
+async def test_register_applies_program_base_tags(client, db_session):
+    await trade_repo.create_program(
+        db_session,
+        TradeProgram(
+            slug="export-launchpad-2026",
+            name="Export Launchpad",
+            status=STATUS_ACTIVE,
+            config={"base_tags": ["Export Launchpad", "2026 First Cohort"]},
+        ),
+    )
+    payload = _payload(
+        responses={
+            "second_participant": {
+                "first_name": "Goodness",
+                "last_name": "Alabi",
+                "email": "goodness@example.com",
+            },
+        }
+    )
+    async with client as c:
+        res = await c.post(
+            "/api/v1/trade/programs/export-launchpad-2026/register", json=payload
+        )
+    assert res.status_code == 201, res.text
+    participants = res.json()["registration"]["participants"]
+    primary = next(p for p in participants if p["is_primary"])
+    second = next(p for p in participants if not p["is_primary"])
+    assert primary["tags"] == ["Export Launchpad", "2026 First Cohort"]
+    assert second["tags"] == ["Export Launchpad", "2026 First Cohort", "Second Participant"]
+
+
 async def test_register_404_for_unknown_program(client, db_session):
     async with client as c:
         res = await c.post(

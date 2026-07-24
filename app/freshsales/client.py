@@ -135,6 +135,15 @@ class FreshsalesClient:
         data = await self.post(endpoints.contact_upsert(), payload)
         return data.get("contact", data)
 
+    async def delete_contact(self, contact_id: int) -> None:
+        """Permanently delete a contact. Used for one-off test-data cleanup only —
+        nothing in the regular sync path deletes CRM records."""
+        await self._rate_limiter.acquire()
+        response = await self._client.delete(endpoints.contact_delete(contact_id))
+        if response.status_code == 404:
+            return
+        response.raise_for_status()
+
     # --- Activity writes (logging agent) ---
 
     async def create_note(self, deal_id: int, description: str) -> dict[str, Any]:

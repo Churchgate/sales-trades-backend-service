@@ -83,9 +83,9 @@ def second_participant_from_responses(
 
 
 def _apply_payload(
-    lead: TradeLead, program_id: int, payload: TradeRegistrationCreateRequest
+    lead: TradeLead, program: TradeProgram, payload: TradeRegistrationCreateRequest
 ) -> None:
-    lead.trade_program_id = program_id
+    lead.trade_program_id = program.id
     lead.first_name = payload.first_name
     lead.last_name = payload.last_name
     lead.phone = payload.phone
@@ -94,6 +94,7 @@ def _apply_payload(
     lead.source = payload.source
     lead.captured_at = payload.captured_at
     lead.responses = payload.responses
+    lead.tags = list((program.config or {}).get("base_tags", []))
     for key, value in shared_fields_from_responses(payload.responses).items():
         setattr(lead, key, value)
 
@@ -125,7 +126,7 @@ async def capture_registration(
         email=email,
         crm_sync_status=CRM_PENDING,
     )
-    _apply_payload(primary, program.id, payload)
+    _apply_payload(primary, program, payload)
 
     try:
         primary = await trade_repo.create_lead(session, primary) if created else (
@@ -137,7 +138,7 @@ async def capture_registration(
         if existing is None:
             raise
         created = False
-        _apply_payload(existing, program.id, payload)
+        _apply_payload(existing, program, payload)
         primary = await trade_repo.update_lead(session, existing)
 
     participants = [primary]
@@ -151,6 +152,11 @@ async def capture_registration(
         # lives at the payload's top level, not inside `responses` — carry it
         # onto the 2nd participant the same way the transfer script does.
         shared = {**shared_fields_from_responses(payload.responses), "company": payload.company}
+        # "Second Participant" on top of the program's base tags — mirrors
+        # lead_crm_sync.build_second_participant_contact_payload's tagging
+        # for the legacy campaign flow, so both contacts stay distinguishable
+        # in Freshsales.
+        second_tags = [*(primary.tags or []), "Second Participant"]
         if second is None:
             second = TradeLead(
                 trade_program_id=program.id,
@@ -159,6 +165,7 @@ async def capture_registration(
                 is_primary=False,
                 source=payload.source,
                 crm_sync_status=CRM_PENDING,
+                tags=second_tags,
                 **second_kwargs,
                 **shared,
             )
@@ -168,6 +175,7 @@ async def capture_registration(
                 setattr(second, key, value)
             for key, value in shared.items():
                 setattr(second, key, value)
+            second.tags = second_tags
             second = await trade_repo.update_lead(session, second)
         participants.append(second)
 
