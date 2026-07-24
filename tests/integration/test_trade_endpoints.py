@@ -79,7 +79,8 @@ async def test_list_programs_requires_staff_role(client_as, db_session):
 
 async def test_list_programs_rejects_unauthenticated(client_as):
     app = create_app()
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         res = await c.get("/api/v1/trade/programs")
     assert res.status_code in (401, 403)
 
