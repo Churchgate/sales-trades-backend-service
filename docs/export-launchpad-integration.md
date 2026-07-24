@@ -24,6 +24,34 @@ that happens, existing "pending" registrations will sync automatically.
 
 ---
 
+## Recommended flow: register early, upload documents mid-wizard
+
+**Don't wait until the end of the application wizard to call `/register`.**
+`/register` only needs `first_name`, `last_name`, and `email` — as soon as
+your wizard has collected those (typically step 1 or 2), call it to get a
+`registration_id` back immediately. That `registration_id` is all the
+eligibility-upload endpoint needs, so **document upload can be one of the
+wizard's own steps** instead of something bolted onto a post-submit success
+screen.
+
+`/register` is safe to call more than once: it's deduped by email, so
+calling it again later in the wizard with the rest of the fields (company,
+sector, financials, the second participant, etc.) **merges into the same
+registration** rather than creating a duplicate — same `registration_id`
+comes back, `"created": false`. Concretely:
+
+1. Wizard step 1-2 (name + email collected) → call `/register` with just
+   those fields → get `registration_id`.
+2. Somewhere in the middle of the wizard → eligibility document upload step,
+   using that `registration_id` (endpoint #2 below).
+3. Final wizard step (all fields collected) → call `/register` again with
+   the complete payload → same registration, now fully populated.
+
+This avoids the applicant ever seeing an upload step disconnected from the
+rest of the application.
+
+---
+
 ## 1. Register a company
 
 ```
