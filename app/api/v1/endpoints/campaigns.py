@@ -155,6 +155,11 @@ async def capture_lead(
         # config["lead_notification"] = true on a campaign + re-seed to re-enable.
         if created and (campaign.config or {}).get("lead_notification"):
             await campaign_mailer.send_lead_notification(lead, campaign)
+        # Applicant-facing confirmation — opt-in per campaign via
+        # config["application_confirmation"] (e.g. export-launchpad-2026, which
+        # has no materials/pack, so this is its only lead-facing email).
+        if created and (campaign.config or {}).get("application_confirmation"):
+            await campaign_mailer.send_application_confirmation(lead, campaign)
 
     return LeadCaptureResponse(status_code=status.HTTP_201_CREATED, lead=_lead_out(lead))
 

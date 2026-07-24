@@ -105,6 +105,10 @@ class LeadOut(BaseModel):
     interests: list[str] | None = None
     requested_materials: list[str] | None = None
     tags: list[str] | None = None
+    # Anything the form collected beyond the typed columns above, kept verbatim
+    # (see models/lead.py) — e.g. Export Launchpad's sector/financials/ownership
+    # fields. Exposed here so the dashboard can render it (LeadDetailDialog).
+    responses: dict[str, Any] = Field(default_factory=dict)
     inspection_requested: bool
     inspection_type: str | None = None
     marketing_opt_in: bool
