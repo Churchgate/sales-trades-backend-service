@@ -32,6 +32,7 @@ _TABLES = (
     "email_events",
     "leads",
     "campaigns",
+    "trade_documents",
     "trade_leads",
     "trade_programs",
     "bookings",

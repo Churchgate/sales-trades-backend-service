@@ -142,6 +142,29 @@ class Settings(BaseSettings):
     apollo_api_key: str = ""
     openrouter_api_key: str = ""
 
+    # --- Trade eligibility documents (Supabase Storage, S3-compatible API) ---
+    # Private bucket for eligibility-document uploads (CAC certificate, logo,
+    # company profile, business plan) submitted via wtcabuja.com — see
+    # POST /trade/programs/{slug}/eligibility. Same Supabase project as the
+    # database and the public `campaign-assets` bucket, but this bucket is
+    # NOT public — access is via short-lived presigned URLs only (see
+    # app/services/trade_storage.py). Endpoint/access keys come from Project
+    # Settings > Storage > S3 Connection; all three must be set to enable
+    # uploads, or trade_storage raises StorageNotConfiguredError.
+    supabase_s3_endpoint_url: str = ""
+    supabase_s3_access_key_id: str = ""
+    supabase_s3_secret_access_key: str = ""
+    supabase_s3_region: str = "eu-west-1"
+    trade_documents_bucket: str = "trade-eligibility-docs"
+
+    @property
+    def supabase_s3_configured(self) -> bool:
+        return bool(
+            self.supabase_s3_endpoint_url
+            and self.supabase_s3_access_key_id
+            and self.supabase_s3_secret_access_key
+        )
+
     @property
     def freshsales_base_url(self) -> str:
         # Freshsales Suite host. The endpoint paths in app/freshsales/endpoints.py

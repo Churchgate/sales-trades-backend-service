@@ -14,6 +14,7 @@ from app.models.pipeline_daily_snapshot import PipelineDailySnapshot
 from app.models.room import Room
 from app.models.stage import Stage
 from app.models.task import TaskSnapshot
+from app.models.trade_document import TradeDocument
 from app.models.trade_lead import TradeLead
 from app.models.trade_program import TradeProgram
 
@@ -34,6 +35,7 @@ __all__ = [
     "Room",
     "Stage",
     "TaskSnapshot",
+    "TradeDocument",
     "TradeLead",
     "TradeProgram",
 ]

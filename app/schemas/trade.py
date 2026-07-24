@@ -121,6 +121,16 @@ class TradeLeadOut(BaseModel):
     eligibility_submitted_at: datetime | None = None
 
 
+class TradeDocumentOut(BaseModel):
+    id: int
+    document_key: str
+    file_name: str
+    content_type: str | None = None
+    size_bytes: int
+    uploaded_at: datetime
+    download_url: str | None = None
+
+
 class TradeRegistrationOut(BaseModel):
     """A registration with both participant rows (0, 1 or 2 depending on
     whether a 2nd participant was ever added) plus the shared fields, for the
@@ -158,3 +168,12 @@ class TradeRegistrationDetailResponse(BaseResponse):
 class TradeRegistrationCaptureResponse(BaseResponse):
     registration: TradeRegistrationOut
     created: bool
+
+
+class TradeEligibilitySubmitResponse(BaseResponse):
+    document: TradeDocumentOut
+    eligibility_status: str
+
+
+class TradeDocumentsListResponse(BaseResponse):
+    documents: list[TradeDocumentOut]
