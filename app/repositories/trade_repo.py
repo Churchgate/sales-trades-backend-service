@@ -1,6 +1,7 @@
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.trade_document import TradeDocument
 from app.models.trade_lead import CRM_SYNCED, TradeLead
 from app.models.trade_program import TradeProgram
 
@@ -197,3 +198,38 @@ async def program_stats(session: AsyncSession, program_id: int) -> dict:
 
 async def count_synced(session: AsyncSession, program_id: int) -> int:
     return await count_leads(session, program_id, crm_sync_status=CRM_SYNCED)
+
+
+# --- eligibility documents ---
+
+
+async def list_documents(session: AsyncSession, registration_id: str) -> list[TradeDocument]:
+    result = await session.execute(
+        select(TradeDocument)
+        .where(TradeDocument.registration_id == registration_id)
+        .order_by(TradeDocument.document_key)
+    )
+    return list(result.scalars().all())
+
+
+async def get_document(
+    session: AsyncSession, registration_id: str, document_key: str
+) -> TradeDocument | None:
+    result = await session.execute(
+        select(TradeDocument).where(
+            TradeDocument.registration_id == registration_id,
+            TradeDocument.document_key == document_key,
+        )
+    )
+    return result.scalars().first()
+
+
+async def get_document_by_id(session: AsyncSession, document_id: int) -> TradeDocument | None:
+    return await session.get(TradeDocument, document_id)
+
+
+async def upsert_document(session: AsyncSession, document: TradeDocument) -> TradeDocument:
+    session.add(document)
+    await session.commit()
+    await session.refresh(document)
+    return document
