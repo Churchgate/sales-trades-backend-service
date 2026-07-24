@@ -76,6 +76,28 @@ async def test_invite_rejects_short_password(client_as):
     assert res.status_code == 422
 
 
+async def test_invite_accepts_wtcabuja_email(client_as, db_session):
+    """Trade programs (Export Launchpad) are run out of WTC Abuja, whose staff
+    use @wtcabuja.com — they get dashboard access alongside @churchgate.com."""
+    async with client_as("superadmin") as c:
+        res = await c.post(
+            "/api/v1/admin/users",
+            json={"email": "trade-rep@wtcabuja.com", "role": "rep"},
+        )
+    assert res.status_code == 201, res.text
+    user = await users_repo.get_user_by_email(db_session, "trade-rep@wtcabuja.com")
+    assert user is not None
+
+
+async def test_invite_rejects_other_domains(client_as):
+    async with client_as("superadmin") as c:
+        res = await c.post(
+            "/api/v1/admin/users",
+            json={"email": "someone@gmail.com", "role": "rep"},
+        )
+    assert res.status_code == 422
+
+
 async def test_invite_duplicate_is_conflict(client_as, db_session):
     await users_repo.create_user(
         db_session,

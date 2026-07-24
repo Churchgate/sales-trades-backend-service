@@ -2,6 +2,9 @@ from pydantic import BaseModel, field_validator
 
 VALID_ROLES = {"superadmin", "admin", "hod", "team_lead", "rep"}
 MIN_PASSWORD_LENGTH = 8
+# Churchgate staff use @churchgate.com; Trade programs (Export Launchpad) are
+# run out of WTC Abuja, whose staff use @wtcabuja.com — both get dashboard access.
+ALLOWED_EMAIL_DOMAINS = ("@churchgate.com", "@wtcabuja.com")
 
 
 def _validate_password_strength(v: str) -> str:
@@ -11,8 +14,8 @@ def _validate_password_strength(v: str) -> str:
 
 
 def _validate_churchgate_email(v: str) -> str:
-    if not v.lower().endswith("@churchgate.com"):
-        raise ValueError("email must be a @churchgate.com address")
+    if not v.lower().endswith(ALLOWED_EMAIL_DOMAINS):
+        raise ValueError(f"email must be one of: {', '.join(ALLOWED_EMAIL_DOMAINS)}")
     return v.lower()
 
 
