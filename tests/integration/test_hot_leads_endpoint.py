@@ -60,11 +60,13 @@ async def _seed_two_campaigns(session: AsyncSession):
     return nog, web, nog_lead, web_lead
 
 
-async def test_list_hot_leads_requires_admin_role(client_as, db_session):
+async def test_list_hot_leads_allows_rep_view_only(client_as, db_session):
+    """Reps get read access to Events pages (Hot Leads included), but nothing
+    mutating — see test_triage_update_requires_admin_role below."""
     await _seed_two_campaigns(db_session)
     async with client_as("rep") as c:
         res = await c.get("/api/v1/campaigns/leads/hot")
-    assert res.status_code == 403
+    assert res.status_code == 200, res.text
 
 
 async def test_list_hot_leads_spans_campaigns_over_http(client_as, db_session):
