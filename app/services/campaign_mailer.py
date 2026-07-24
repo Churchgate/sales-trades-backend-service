@@ -363,7 +363,15 @@ def _c_button(url: str, label: str, *, gold: bool = False) -> str:
     )
 
 
-def _c_header(tag: str, heading_html: str, hero_url: str, logo_url: str) -> str:
+def _c_header(
+    tag: str,
+    heading_html: str,
+    hero_url: str,
+    logo_url: str,
+    *,
+    spacer_height: int = 88,
+    show_label: bool = True,
+) -> str:
     """Dark hero with the logo + heading overlaid on the (pre-darkened) photo.
 
     Bulletproof background: the `background` attribute carries the image for Gmail/
@@ -371,6 +379,15 @@ def _c_header(tag: str, heading_html: str, hero_url: str, logo_url: str) -> str:
     is the solid-dark fallback if a client drops both. The photo must already be
     dark enough for white text (we darken it before hosting) since email clients
     strip CSS gradient scrims. Content flows normally (no position/flex).
+
+    `spacer_height` sets the transparent gap above the small label/heading —
+    the header's rendered height (and therefore how much of a `background-size:
+    cover` hero photo is visible before being cropped) is entirely a function of
+    this content's flow height, so a caller whose hero photo needs more of its
+    frame visible (e.g. no heading_html to fill vertical space) can raise it.
+    `show_label` hides the small gold "World Trade Center · Abuja" line —
+    for a hero photo with its own baked-in branding/text, that label just
+    duplicates (and can collide with) what's already in the image.
     """
     if logo_url:
         brand = (
@@ -395,9 +412,9 @@ def _c_header(tag: str, heading_html: str, hero_url: str, logo_url: str) -> str:
                       </td>
                     </tr>
                   </table>
-                  <div style="font-size:0;line-height:0;height:88px;">&nbsp;</div>
-                  <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:{_C_GOLD};margin:0 0 8px;">World Trade Center &middot; Abuja</p>
-                  <p style="font-family:{_SERIF};font-size:27px;font-weight:400;color:#ffffff;line-height:1.15;margin:0;">{heading_html}</p>
+                  <div style="font-size:0;line-height:0;height:{spacer_height}px;">&nbsp;</div>
+                  {f'<p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:{_C_GOLD};margin:0 0 8px;">World Trade Center &middot; Abuja</p>' if show_label else ""}
+                  {f'<p style="font-family:{_SERIF};font-size:27px;font-weight:400;color:#ffffff;line-height:1.15;margin:0;">{heading_html}</p>' if heading_html else ""}
                 </td>
               </tr>
             </table>"""
@@ -454,7 +471,8 @@ def _c_footer(
 
 def _c_shell(*, tag: str, heading_html: str, body_html: str, contact_lead_in: str,
              footer_note_html: str, hero_url: str, logo_url: str,
-             footer_email: str = "enquiries@wtcabuja.com") -> str:
+             footer_email: str = "enquiries@wtcabuja.com", hero_spacer_height: int = 88,
+             hero_show_label: bool = True) -> str:
     """Wrap the header + body + footer in the cream outer shell."""
     return f"""\
 <body style="margin:0;padding:0;background:{_C_CREAM};">
@@ -462,7 +480,7 @@ def _c_shell(*, tag: str, heading_html: str, body_html: str, contact_lead_in: st
     <tr>
       <td align="center" style="padding:40px 16px;">
         <table width="600" cellpadding="0" cellspacing="0" border="0" role="presentation" style="max-width:600px;width:100%;">
-{_c_header(tag, heading_html, hero_url, logo_url)}
+{_c_header(tag, heading_html, hero_url, logo_url, spacer_height=hero_spacer_height, show_label=hero_show_label)}
           <tr>
             <td style="background:#ffffff;padding:40px 48px 36px;">
 {body_html}

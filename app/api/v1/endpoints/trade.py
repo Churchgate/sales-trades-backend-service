@@ -105,6 +105,10 @@ async def register(
     # campaigns.py gates the campaign-era version of this email.
     if created and (program.config or {}).get("application_confirmation"):
         await trade_mailer.send_application_confirmation(participants, program)
+    if created:
+        # send_lead_notification no-ops on its own if config["lead_notification"]
+        # isn't enabled — no need to duplicate that check here.
+        await trade_mailer.send_lead_notification(participants, program)
 
     return TradeRegistrationCaptureResponse(
         status_code=status.HTTP_201_CREATED,
