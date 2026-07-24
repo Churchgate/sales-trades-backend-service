@@ -21,20 +21,34 @@ unrelated Lead row or fail the FK). Revisit alongside the eligibility/upload
 phase if Trade email engagement tracking is needed.
 """
 
+from datetime import UTC, datetime
+
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models.trade_lead import TradeLead
 from app.models.trade_program import TradeProgram
 from app.services.campaign_mailer import (
+    _BG,
     _C_GOLD,
     _C_GOLD_DK,
     _C_INK,
     _C_INK_SOFT,
     _C_LINE,
     _C_PANEL,
+    _DIM,
+    _DIVIDER,
+    _GOLD,
     _HEAD,
+    _INNER,
+    _LABEL_GRAY,
+    _MUTED,
     _SANS,
+    _WHITE,
     _c_shell,
+    _divider,
+    _label,
+    _wrap,
+    _wtc_header,
     send_campaign_email,
 )
 
@@ -104,11 +118,17 @@ def build_application_confirmation_email(
     # ── HTML ─────────────────────────────────────────────────────────────────
     eligibility_html = ""
     if eligibility:
+        # A checkmark next to each item would read as "confirmed" — but these
+        # haven't been reviewed yet at this point (the confirmation email
+        # fires on submission, before any review happens), so that combined
+        # with a "criteria" heading is a tautology: telling the applicant
+        # they've already met requirements nobody has checked. A neutral
+        # bullet + "what we'll review" framing avoids implying an outcome.
         rows = "\n".join(
             f"""\
                   <tr>
                     <td style="vertical-align:top;width:20px;padding:0 0 10px;">
-                      <span style="font-family:{_SANS};font-size:13px;color:{_C_GOLD_DK};">&#10003;</span>
+                      <span style="font-family:{_SANS};font-size:13px;color:{_C_GOLD_DK};">&#8226;</span>
                     </td>
                     <td style="vertical-align:top;padding:0 0 10px;">
                       <p style="font-family:{_SANS};font-size:13px;color:{_C_INK_SOFT};line-height:1.5;margin:0;">{item}</p>
@@ -117,7 +137,7 @@ def build_application_confirmation_email(
             for item in eligibility
         )
         eligibility_html = f"""\
-              <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 14px;padding-top:22px;border-top:1px solid {_C_LINE};">Eligibility criteria</p>
+              <p style="font-family:{_SANS};font-size:8px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{_C_GOLD_DK};margin:0 0 14px;padding-top:22px;border-top:1px solid {_C_LINE};">What we'll review</p>
               <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:8px;">
 {rows}
               </table>"""
@@ -161,15 +181,33 @@ def build_application_confirmation_email(
         f"You are receiving this because you applied through {_domain}.<br>"
         "WTC Abuja Trade Services &nbsp;&middot;&nbsp; Central Business District, Abuja, Nigeria"
     )
+    # The hero photo has "EXPORT LAUNCHPAD BOOT CAMP" baked into the image
+    # itself, so overlaying our own heading text (and the small gold "World
+    # Trade Center · Abuja" label — same text the photo/logo already carry)
+    # on top of it collides into an unreadable mess. Only show them when
+    # there's no hero image to clash with (the plain dark banner fallback
+    # still needs its own text).
+    #
+    # Dropping both also shrinks the header's content height, and since the
+    # hero is `background-size:cover`, a shorter header crops more of the
+    # photo off the bottom — clipping the image's own baked-in text. The
+    # photo is 1225x613 (verified via PIL); at the email's 600px width
+    # that's ~300px tall uncropped, so the spacer is widened to compensate
+    # for the label+heading no longer contributing height (~208px spacer +
+    # ~92px of padding/logo row ≈ 300px total).
+    heading_html = "" if hero_url else "Your application<br>has been received."
+    hero_spacer_height = 208 if hero_url else 88
     html = _HEAD + _c_shell(
         tag="Application Received",
-        heading_html="Your application<br>has been received.",
+        heading_html=heading_html,
         body_html=body_html,
         contact_lead_in="Can't wait? Reach us directly.",
         footer_note_html=footer_note,
         hero_url=hero_url,
         logo_url=logo_url,
         footer_email=contact_email,
+        hero_spacer_height=hero_spacer_height,
+        hero_show_label=not hero_url,
     ) + "</html>"
     return subject, html, text
 
@@ -202,3 +240,183 @@ async def send_application_confirmation(
         except Exception:
             logger.exception("trade application confirmation email failed", lead_id=lead.id)
     return ok
+
+
+# ── Internal "New Registration" notification (to Trade Services) ───────────────
+#
+# Adapted from campaign_mailer.build_lead_notification_email/send_lead_notification
+# (the "New Lead" email sent to enquiries@wtcabuja.com for regular campaign
+# leads) — same dark-card visual style, but a distinct recipient
+# (program.config["lead_notification"]["to_email"], not the shared
+# settings.campaign_notification_email) and Trade-specific fields (company/
+# sector/topics, both participants, required-documents checklist) instead of
+# residential viewing/materials fields.
+
+
+def build_lead_notification_email(
+    participants: list[TradeLead], program: TradeProgram
+) -> tuple[str, str, str]:
+    """(subject, html, text) for the internal new-registration notification."""
+    primary = next((p for p in participants if p.is_primary), participants[0])
+    second = next((p for p in participants if not p.is_primary), None)
+    full_name = " ".join(filter(None, [primary.first_name, primary.last_name])) or "Unknown"
+    company = primary.company or "Not provided"
+    job_title = primary.job_title or "Not provided"
+    sector = primary.industry_sector or "Not provided"
+    employees = primary.employee_count or "Not provided"
+    topics = ", ".join(primary.topics_of_interest or []) or "None selected"
+    captured_at = (
+        primary.captured_at.astimezone(UTC).strftime("%-d %B %Y, %H:%M")
+        if primary.captured_at
+        else datetime.now(UTC).strftime("%-d %B %Y, %H:%M")
+    )
+    required_docs = [
+        d.get("label", d.get("key"))
+        for d in (program.config or {}).get("required_documents", [])
+        if d.get("required")
+    ]
+
+    subject = f"New Export Launchpad Application: {full_name} — {company}"
+
+    # ── plain text ───────────────────────────────────────────────────────────
+    second_text = (
+        f"{second.first_name} {second.last_name} <{second.email or 'no email'}>"
+        if second
+        else "None"
+    )
+    text = (
+        f"New Export Launchpad Application — {program.name}\n"
+        f"{'=' * 50}\n\n"
+        f"Name:            {full_name}\n"
+        f"Company:         {company}\n"
+        f"Title:           {job_title}\n"
+        f"Email:           {primary.email}\n"
+        + (f"Phone:           {primary.phone}\n" if primary.phone else "")
+        + f"Industry sector: {sector}\n"
+        f"Employees:       {employees}\n"
+        f"Topics:          {topics}\n"
+        f"2nd participant: {second_text}\n\n"
+        f"Required documents outstanding until submitted: {', '.join(required_docs) or 'None'}\n\n"
+        f"Registration ID: {primary.registration_id}\n"
+        f"Captured: {captured_at} via wtcabuja.com\n"
+    )
+
+    # ── HTML ─────────────────────────────────────────────────────────────────
+    phone_line = (
+        f'<div style="color:{_GOLD};font-size:14px;margin-top:6px">&#128241; {primary.phone}</div>'
+        if primary.phone
+        else ""
+    )
+    second_html = (
+        f'<div style="color:{_MUTED};font-size:14px">{second.first_name} {second.last_name} '
+        f'&lt;{second.email or "no email"}&gt;</div>'
+        if second
+        else f'<div style="color:{_LABEL_GRAY};font-size:14px">None</div>'
+    )
+    docs_html = (
+        "".join(
+            f'<div style="color:{_MUTED};font-size:14px;margin-bottom:6px">'
+            f'<span style="color:{_GOLD};margin-right:10px">&#10022;</span>{d}</div>'
+            for d in required_docs
+        )
+        if required_docs
+        else f'<div style="color:{_LABEL_GRAY};font-size:14px">None configured</div>'
+    )
+
+    body = f"""\
+{_wtc_header("New Export Launchpad Application")}
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="padding:32px 40px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+            <tr>
+              <td width="50%" style="vertical-align:top;padding-right:16px">
+                {_label("NAME")}
+                <div style="color:{_WHITE};font-size:16px;font-weight:700;line-height:1.35">{full_name}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;padding-left:16px">
+                {_label("COMPANY")}
+                <div style="color:{_WHITE};font-size:16px;font-weight:700;line-height:1.35">{company}</div>
+              </td>
+            </tr>
+          </table>
+          {_divider()}
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+            <tr>
+              <td width="50%" style="vertical-align:top;padding-right:16px">
+                {_label("TITLE")}
+                <div style="color:{_MUTED};font-size:14px">{job_title}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;padding-left:16px">
+                {_label("SECTOR")}
+                <div style="color:{_MUTED};font-size:14px">{sector}</div>
+              </td>
+            </tr>
+          </table>
+          {_divider()}
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+            <tr>
+              <td width="50%" style="vertical-align:top;padding-right:16px">
+                {_label("EMPLOYEES")}
+                <div style="color:{_MUTED};font-size:14px">{employees}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;padding-left:16px">
+                {_label("TOPICS OF INTEREST")}
+                <div style="color:{_MUTED};font-size:14px">{topics}</div>
+              </td>
+            </tr>
+          </table>
+          {_divider()}
+          {_label("CONTACT")}
+          <div style="color:{_GOLD};font-size:14px"><a href="mailto:{primary.email}" style="color:{_GOLD};text-decoration:none">&#9993; {primary.email}</a></div>
+          {phone_line}
+          <div style="margin-top:20px">
+            {_label("2ND PARTICIPANT")}
+            {second_html}
+          </div>
+          <div style="background:{_INNER};border-radius:10px;padding:20px 24px;margin:20px 0">
+            {_label("REQUIRED DOCUMENTS")}
+            {docs_html}
+          </div>
+          <div style="border-top:1px solid {_DIVIDER};padding-top:16px;margin-top:4px">
+            {_label("REGISTRATION ID")}
+            <div style="color:{_LABEL_GRAY};font-size:12px;font-family:monospace">{primary.registration_id}</div>
+          </div>
+        </td></tr>
+      </table>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="background:{_BG};border-top:1px solid {_DIVIDER};padding:22px 40px;text-align:center">
+          <div style="color:{_DIM};font-size:12px;margin-bottom:4px">Captured via wtcabuja.com Export Launchpad application form</div>
+          <div style="color:{_DIM};font-size:12px;margin-bottom:14px">{captured_at} &middot; {program.name}</div>
+          <div style="color:{_GOLD};font-size:9px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase">WORLD TRADE CENTER ABUJA</div>
+        </td></tr>
+      </table>"""
+
+    html = _wrap(body)
+    return subject, html, text
+
+
+async def send_lead_notification(
+    participants: list[TradeLead], program: TradeProgram, settings: Settings | None = None
+) -> bool:
+    """Fire-and-forget internal notification to the Trade Services team on a
+    genuinely new registration. Gated by program.config["lead_notification"]
+    (mirrors campaigns' per-campaign "lead_notification" flag) — absent or
+    falsy skips silently. Never raises."""
+    settings = settings or get_settings()
+    cfg = (program.config or {}).get("lead_notification") or {}
+    if not cfg.get("enabled"):
+        return False
+    to_email = cfg.get("to_email")
+    if not to_email:
+        return False
+
+    try:
+        subject, html, text = build_lead_notification_email(participants, program)
+        return await send_campaign_email(
+            to_email=to_email, subject=subject, html=html, text=text, settings=settings
+        )
+    except Exception:
+        logger.exception(
+            "trade lead notification email failed", registration_id=participants[0].registration_id
+        )
+        return False

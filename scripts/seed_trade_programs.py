@@ -41,6 +41,16 @@ _EXPORT_LAUNCHPAD_CONFIG = {
     # cohort stays under one consistent tag set rather than splitting across
     # an old and a new naming scheme. See services/trade_capture.py.
     "base_tags": ["Export Launchpad", "2026 First Cohort", "export-launchpad"],
+    # Internal "New Application" alert, sent to the Trade Services team on
+    # every genuinely new registration — the Trade equivalent of the old
+    # campaign's config["lead_notification"]=True (which went to the shared
+    # settings.campaign_notification_email). Distinct recipient here since
+    # Export Launchpad applications should route straight to the team that
+    # actually runs the cohort, not the general enquiries inbox.
+    "lead_notification": {
+        "enabled": True,
+        "to_email": "Tradeservices@wtcabuja.com",
+    },
     "company_founded_options": [
         "Less than 2 years", "2-5 years", "5-9 years", "10-20 years", "More than 20 years",
     ],
@@ -73,6 +83,10 @@ _EXPORT_LAUNCHPAD_CONFIG = {
         "contact_phone": "09164793000",
         "response_days": 3,
         "slot_limit": 20,
+        # "Export LP EH.png" has "EXPORT LAUNCHPAD BOOT CAMP" baked into the
+        # image itself — trade_mailer.build_application_confirmation_email
+        # skips its own heading-text overlay whenever hero_url is set, so
+        # this photo's own text is the only thing shown (no collision).
         "hero_url": (
             "https://uxnddcxhzcjcldpheudk.supabase.co/storage/v1/object/public/"
             "campaign-assets/Export%20LP%20EH.png"
