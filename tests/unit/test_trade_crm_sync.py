@@ -1,6 +1,9 @@
 from app.models.trade_lead import TradeLead
 from app.models.trade_program import STATUS_ACTIVE, TradeProgram
-from app.services.trade_crm_sync import build_contact_payload
+from app.services.trade_crm_sync import (
+    _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID,
+    build_contact_payload,
+)
 
 
 def _trade_lead(**overrides) -> TradeLead:
@@ -48,3 +51,8 @@ def test_payload_eligibility_status_placeholder() -> None:
     lead = _trade_lead(eligibility_status="submitted")
     payload = build_contact_payload(lead, _program())
     assert payload["contact"]["custom_field"]["cf_eligibility_status"] == "submitted"
+
+
+def test_payload_uses_dedicated_export_launchpad_lead_source() -> None:
+    payload = build_contact_payload(_trade_lead(), _program())
+    assert payload["contact"]["lead_source_id"] == _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID
