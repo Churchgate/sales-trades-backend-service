@@ -31,9 +31,10 @@ logger = get_logger(__name__)
 # module comment in lead_crm_sync.py for the incident history). Trade shares
 # the same "Inquiry Stage" starting point as every other new capture.
 _INQUIRY_STAGE_ID = 18006136123
-# Falls back to the website lead source until a dedicated Trade source is
-# created/verified live via GET /crm/sales/api/selector/lead_sources.
-_WEBSITE_LEAD_SOURCE_ID = 17001006640
+# Dedicated Trade lead source (Freshsales Admin > Sales Force Automation >
+# Sources), same "one custom source per cohort" precedent as NOG-Week-2026 in
+# lead_crm_sync.py. Verified live via GET /crm/sales/api/selector/lead_sources.
+_EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID = 17001007411
 
 
 def build_contact_payload(lead: TradeLead, program: TradeProgram) -> dict[str, Any]:
@@ -45,7 +46,7 @@ def build_contact_payload(lead: TradeLead, program: TradeProgram) -> dict[str, A
         "mobile_number": lead.phone,
         "job_title": lead.job_title,
         "tags": lead.tags or [],
-        "lead_source_id": _WEBSITE_LEAD_SOURCE_ID,
+        "lead_source_id": _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID,
         "lifecycle_stage_id": _INQUIRY_STAGE_ID,
         "custom_field": {
             "cf_company": lead.company,
