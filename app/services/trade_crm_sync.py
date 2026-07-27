@@ -84,6 +84,16 @@ async def sync_trade_lead(
         lead.crm_sync_status = CRM_SKIPPED
         return await trade_repo.update_lead(session, lead)
 
+    # A 2nd participant's email is optional on the form — without one,
+    # Freshsales has nothing to dedupe/identify a contact by and the upsert
+    # always 400s. Skip rather than attempt-and-fail, matching
+    # lead_crm_sync.build_second_participant_contact_payload's behavior
+    # (returns None, never pushed, when there's no email). Otherwise this
+    # would fail identically on every scheduled retry forever.
+    if not lead.email:
+        lead.crm_sync_status = CRM_SKIPPED
+        return await trade_repo.update_lead(session, lead)
+
     try:
         contact = await client.upsert_contact(build_contact_payload(lead, program))
         contact_id = contact.get("id")
