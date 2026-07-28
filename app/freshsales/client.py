@@ -147,9 +147,10 @@ class FreshsalesClient:
     async def lookup_contact_by_email(self, email: str) -> dict[str, Any] | None:
         """First contact matching `email`, or None if no real Freshsales contact
         exists yet — used to dedup AI-sourced leads against the live CRM, not just
-        our own DB (services/lead_prospecting.py)."""
+        our own DB (services/lead_prospecting.py). Verified live: the response is
+        double-nested, `{"contacts": {"contacts": [...]}}` — not a flat list."""
         data = await self.get(endpoints.lookup_contact_by_email(email))
-        contacts = data.get("contacts", [])
+        contacts = (data.get("contacts") or {}).get("contacts") or []
         return contacts[0] if contacts else None
 
     # --- Activity writes (logging agent) ---
