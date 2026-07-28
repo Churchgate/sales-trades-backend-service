@@ -2,6 +2,8 @@ from app.models.trade_lead import TradeLead
 from app.models.trade_program import STATUS_ACTIVE, TradeProgram
 from app.services.trade_crm_sync import (
     _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID,
+    _LEAD_STAGE_ID,
+    _NEW_STATUS_ID,
     build_contact_payload,
 )
 
@@ -56,3 +58,9 @@ def test_payload_eligibility_status_placeholder() -> None:
 def test_payload_uses_dedicated_export_launchpad_lead_source() -> None:
     payload = build_contact_payload(_trade_lead(), _program())
     assert payload["contact"]["lead_source_id"] == _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID
+
+
+def test_payload_starts_at_lead_stage_new_status() -> None:
+    payload = build_contact_payload(_trade_lead(), _program())
+    assert payload["contact"]["lifecycle_stage_id"] == _LEAD_STAGE_ID
+    assert payload["contact"]["contact_status_id"] == _NEW_STATUS_ID
