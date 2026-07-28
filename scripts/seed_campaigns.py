@@ -230,6 +230,18 @@ _WTC_WEBSITE_CONFIG: dict = {
     },
 }
 
+# AI Lead Generation Engine — server-side only, no public form. Leads come from
+# the n8n "Web scan" pipeline (verified-source scanning + Apollo enrichment/people
+# search) via services/lead_prospecting.py, scored with our own ICP rubric on
+# arrival. crm_sync_enabled=False (same kill switch as Export Launchpad below) keeps
+# these out of Freshsales until a human reviews and syncs them manually from the
+# Lead Engine dashboard page — cold-sourced contacts shouldn't auto-flow into the
+# CRM sight-unseen.
+_AI_PROSPECTING_CONFIG: dict = {
+    "base_tags": ["AI Lead Engine"],
+    "crm_sync_enabled": False,
+}
+
 # Export Launchpad Boot Camp — 2026 first cohort. Cohort-scoped campaign (same
 # shape as _NOG_2026_CONFIG above: one campaign per cohort/event, not a shared
 # multi-programme bucket) so this cohort's applications are cleanly separable
@@ -294,6 +306,15 @@ CAMPAIGNS: list[dict] = [
         "ends_on": date(2056, 7, 9),  # "always on" — the public site has no end date
         "timezone": "Africa/Lagos",
         "config": _WTC_WEBSITE_CONFIG,
+    },
+    {
+        "slug": "ai-prospecting",
+        "name": "AI Lead Generation Engine",
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 7, 27),
+        "ends_on": date(2056, 7, 27),  # "always on" — no public form, no end date
+        "timezone": "Africa/Lagos",
+        "config": _AI_PROSPECTING_CONFIG,
     },
     {
         "slug": "export-launchpad-2026",

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 from app.api.dependencies import ResolverDep, SessionDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.services import email_event_ingest
+from app.services import email_event_ingest, lead_prospecting
 from app.services.webhook_ingest import ingest_webhook
 
 logger = get_logger(__name__)
@@ -76,3 +76,23 @@ async def sendgrid_events_webhook(
     events = json.loads(raw_body)
     processed = await email_event_ingest.ingest_events(session, events)
     return {"status": "ok", "processed": str(processed)}
+
+
+@router.post("/prospecting/companies", status_code=status.HTTP_200_OK)
+async def prospecting_company_signal(
+    signal: lead_prospecting.ProspectCompanySignal,
+    session: SessionDep,
+    x_n8n_webhook_secret: Annotated[str | None, Header()] = None,
+) -> lead_prospecting.ProspectIngestResult:
+    """AI Lead Generation Engine ingest — called by n8n's `Web scan` workflow's
+    `Add lead to database` node (repointed here from its old SmartSuite URL) once
+    it's sourced and Apollo-enriched a company signal. Same header-secret pattern
+    as the Freshsales webhook above."""
+    settings = get_settings()
+    expected_secret = settings.n8n_webhook_secret
+    if expected_secret and x_n8n_webhook_secret != expected_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret"
+        )
+
+    return await lead_prospecting.ingest_company_signal(session, signal, settings=settings)

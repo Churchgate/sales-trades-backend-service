@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep, require_role
+from app.freshsales.client import FreshsalesClient
 from app.models.campaign import Campaign
 from app.models.lead import PACK_PENDING, Lead
 from app.repositories import campaigns_repo, contact_activity_repo, leads_repo
@@ -240,6 +241,23 @@ async def list_hot_leads(
     return LeadsListResponse(
         status_code=status.HTTP_200_OK, leads=[_lead_out(lead) for lead in leads], total=total
     )
+
+
+@router.post("/leads/{lead_id}/sync-crm", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
+async def sync_lead_to_crm(lead_id: int, session: SessionDep) -> LeadCaptureResponse:
+    """Manual "Sync to CRM" action for the Lead Engine page — the ai-prospecting
+    campaign has `crm_sync_enabled=False` (scripts/seed_campaigns.py) so
+    AI-sourced leads never reach Freshsales automatically; a human reviewing one
+    specific lead here is the deliberate exception, via `sync_lead(force=True)`."""
+    lead = await leads_repo.get(session, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    campaign = await campaigns_repo.get(session, lead.campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    async with FreshsalesClient() as client:
+        lead = await lead_crm_sync.sync_lead(session, lead, campaign, client=client, force=True)
+    return LeadCaptureResponse(status_code=status.HTTP_200_OK, lead=_lead_out(lead))
 
 
 @router.patch("/leads/{lead_id}/triage", dependencies=[Depends(require_role(*_ADMIN_ROLES))])
