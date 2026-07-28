@@ -150,9 +150,31 @@ async def test_dedups_against_an_existing_freshsales_contact(db_session: AsyncSe
     with respx.mock(assert_all_called=False) as router:
         _mock_poc_webhook(router, [_CONTACT])
         router.get(url__regex=r".*/crm/sales/api/lookup.*").mock(
-            return_value=httpx.Response(200, json={"contacts": [{"id": 999}]})
+            # Verified live: Freshsales double-nests this — {"contacts": {"contacts": [...]}}.
+            return_value=httpx.Response(200, json={"contacts": {"contacts": [{"id": 999}]}})
         )
         result = await ingest_company_signal(db_session, signal, settings=settings)
 
     assert result.created == 0
     assert result.deduped_out == 1
+
+
+async def test_creates_when_freshsales_lookup_genuinely_finds_no_contact(
+    db_session: AsyncSession,
+) -> None:
+    """The real "not found" shape Freshsales returns, verified live —
+    double-nested with an empty inner list, not a bare empty list."""
+    await _seed_campaign(db_session)
+    settings = _settings(freshsales_lead_sync_enabled=True)
+    signal = ProspectCompanySignal(organization=_ORGANIZATION)
+
+    with respx.mock(assert_all_called=False) as router:
+        _mock_poc_webhook(router, [_CONTACT])
+        _mock_openrouter(router)
+        router.get(url__regex=r".*/crm/sales/api/lookup.*").mock(
+            return_value=httpx.Response(200, json={"contacts": {"contacts": []}})
+        )
+        result = await ingest_company_signal(db_session, signal, settings=settings)
+
+    assert result.created == 1
+    assert result.deduped_out == 0
