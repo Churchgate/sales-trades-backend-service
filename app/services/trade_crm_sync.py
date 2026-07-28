@@ -28,9 +28,11 @@ from app.repositories import trade_repo
 logger = get_logger(__name__)
 
 # Freshsales requires both of these system fields on every contact (see the
-# module comment in lead_crm_sync.py for the incident history). Trade shares
-# the same "Inquiry Stage" starting point as every other new capture.
-_INQUIRY_STAGE_ID = 18006136123
+# module comment in lead_crm_sync.py for the incident history). Trade starts
+# every new contact at Lifecycle stage "Lead" / Status "New" — verified live
+# via GET /crm/sales/api/settings/contacts/fields.
+_LEAD_STAGE_ID = 18004285060
+_NEW_STATUS_ID = 17000261833
 # Dedicated Trade lead source (Freshsales Admin > Sales Force Automation >
 # Sources), same "one custom source per cohort" precedent as NOG-Week-2026 in
 # lead_crm_sync.py. Verified live via GET /crm/sales/api/selector/lead_sources.
@@ -47,7 +49,8 @@ def build_contact_payload(lead: TradeLead, program: TradeProgram) -> dict[str, A
         "job_title": lead.job_title,
         "tags": lead.tags or [],
         "lead_source_id": _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID,
-        "lifecycle_stage_id": _INQUIRY_STAGE_ID,
+        "lifecycle_stage_id": _LEAD_STAGE_ID,
+        "contact_status_id": _NEW_STATUS_ID,
         "custom_field": {
             "cf_company": lead.company,
             "cf_campaign": program.slug,
