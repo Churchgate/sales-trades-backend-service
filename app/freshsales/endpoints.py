@@ -9,6 +9,8 @@ Note: the `/selector/deal_pipelines` response embeds `deal_stages[]` inside each
 pipeline object, so there is no need to call the separate stages endpoint.
 """
 
+from urllib.parse import quote
+
 
 def deals_view(view_id: int, page: int = 1) -> str:
     """Deals list for a saved view. `include=owner,deal_reason` sideloads owner_id and
@@ -101,6 +103,12 @@ def contact_upsert() -> str:
 def contact_delete(contact_id: int) -> str:
     """Permanently delete a contact. No response body on success (204)."""
     return f"/crm/sales/api/contacts/{contact_id}"
+
+
+def lookup_contact_by_email(email: str) -> str:
+    """Exact-match lookup by email, scoped to contacts. Response wraps matches
+    under `contacts` (empty list, not 404, when nothing matches)."""
+    return f"/crm/sales/api/lookup?q={quote(email)}&f=email&entities=contact"
 
 
 # --- Contact activity (read — NOG per-contact activity sync) ---

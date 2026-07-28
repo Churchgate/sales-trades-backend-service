@@ -912,6 +912,40 @@ async def test_sync_lead_skipped_when_disabled(db_session: AsyncSession) -> None
     assert result.crm_sync_status == CRM_SKIPPED
 
 
+async def test_sync_lead_respects_per_campaign_kill_switch_unless_forced(
+    db_session: AsyncSession,
+) -> None:
+    """ai-prospecting-style campaign (crm_sync_enabled=False): normal sync skips,
+    but the Lead Engine's manual "Sync to CRM" action (force=True) overrides it."""
+    campaign = await campaigns_repo.create(
+        db_session,
+        Campaign(
+            slug="manual-only", name="Manual only", status=STATUS_ACTIVE,
+            config={"crm_sync_enabled": False},
+        ),
+    )
+    lead = await lead_service.capture_lead(db_session, "manual-only", _lead())
+    enabled = Settings(freshsales_lead_sync_enabled=True, freshsales_api_key="SG.test")
+    from app.freshsales.client import FreshsalesClient
+
+    async with FreshsalesClient(enabled) as client:
+        skipped = await lead_crm_sync.sync_lead(
+            db_session, lead, campaign, client=client, settings=enabled
+        )
+    assert skipped.crm_sync_status == CRM_SKIPPED
+
+    with respx.mock(base_url=enabled.freshsales_base_url) as router:
+        router.post("/crm/sales/api/contacts/upsert").mock(
+            return_value=httpx.Response(200, json={"contact": {"id": 5150}})
+        )
+        async with FreshsalesClient(enabled) as client:
+            forced = await lead_crm_sync.sync_lead(
+                db_session, lead, campaign, client=client, settings=enabled, force=True
+            )
+    assert forced.crm_sync_status == CRM_SYNCED
+    assert forced.crm_contact_id == "5150"
+
+
 async def test_sync_lead_success_marks_synced(db_session: AsyncSession) -> None:
     campaign = await _make_campaign(db_session)
     lead = await lead_service.capture_lead(db_session, "nog-2026", _lead())

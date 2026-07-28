@@ -144,6 +144,14 @@ class FreshsalesClient:
             return
         response.raise_for_status()
 
+    async def lookup_contact_by_email(self, email: str) -> dict[str, Any] | None:
+        """First contact matching `email`, or None if no real Freshsales contact
+        exists yet — used to dedup AI-sourced leads against the live CRM, not just
+        our own DB (services/lead_prospecting.py)."""
+        data = await self.get(endpoints.lookup_contact_by_email(email))
+        contacts = data.get("contacts", [])
+        return contacts[0] if contacts else None
+
     # --- Activity writes (logging agent) ---
 
     async def create_note(self, deal_id: int, description: str) -> dict[str, Any]:

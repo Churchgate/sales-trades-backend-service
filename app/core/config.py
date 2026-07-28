@@ -142,6 +142,18 @@ class Settings(BaseSettings):
     apollo_api_key: str = ""
     openrouter_api_key: str = ""
 
+    # --- AI Lead Generation Engine (n8n "Web scan" -> services/lead_prospecting.py) ---
+    # n8n keeps doing verified-source scanning, Apollo company enrichment, and Apollo
+    # people-search (03_Add POC per company); Railway's only job is applying our own
+    # ICP rubric + dedup + storage. n8n_poc_webhook_url is the URL our ingest endpoint
+    # calls to get senior contacts for a company domain; n8n_webhook_secret protects
+    # the inbound ingest endpoint itself (same header-secret pattern as
+    # freshsales_webhook_secret above). Empty n8n_poc_webhook_url degrades to
+    # zero-contacts-found rather than erroring, matching the rest of this module's
+    # "missing key = no-op" convention.
+    n8n_poc_webhook_url: str = ""
+    n8n_webhook_secret: str = ""
+
     # --- Trade eligibility documents (Supabase Storage, S3-compatible API) ---
     # Private bucket for eligibility-document uploads (CAC certificate, logo,
     # company profile, business plan) submitted via wtcabuja.com — see

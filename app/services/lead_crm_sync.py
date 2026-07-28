@@ -163,14 +163,21 @@ async def sync_lead(
     *,
     client: FreshsalesClient,
     settings: Settings | None = None,
+    force: bool = False,
 ) -> Lead:
-    """Push one lead to Freshsales, recording the outcome on the lead. Never raises."""
+    """Push one lead to Freshsales, recording the outcome on the lead. Never raises.
+
+    `force=True` bypasses the per-campaign kill switch below — used by the Lead
+    Engine dashboard's manual "Sync to CRM" action, since a human reviewing one
+    specific AI-sourced lead is exactly the deliberate exception that switch
+    exists to require."""
     settings = settings or get_settings()
     # Per-campaign kill switch (campaign.config["crm_sync_enabled"] = False) for
     # campaigns still in test/QA — e.g. export-launchpad-2026 while it's being
-    # validated, so test submissions don't pollute the live Freshsales pipeline.
+    # validated — or permanently manual-only, like ai-prospecting (see
+    # scripts/seed_campaigns.py), so leads don't reach Freshsales unreviewed.
     # Absent/true means synced as normal; only an explicit False skips it.
-    campaign_sync_enabled = (campaign.config or {}).get("crm_sync_enabled", True)
+    campaign_sync_enabled = force or (campaign.config or {}).get("crm_sync_enabled", True)
     if not settings.freshsales_lead_sync_enabled or not campaign_sync_enabled:
         lead.crm_sync_status = CRM_SKIPPED
         return await leads_repo.update(session, lead)
