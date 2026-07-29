@@ -60,6 +60,23 @@ def test_payload_uses_dedicated_export_launchpad_lead_source() -> None:
     assert payload["contact"]["lead_source_id"] == _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID
 
 
+def test_payload_falls_back_to_export_launchpad_source_when_program_unset() -> None:
+    """A program with crm_lead_source_id explicitly None (e.g. a newly-seeded
+    mission pending manual Freshsales setup) must also fall back — not just an
+    absent key — matching program.config's `.get(...) or default` fallback."""
+    program = _program()
+    program.config = {"crm_lead_source_id": None}
+    payload = build_contact_payload(_trade_lead(), program)
+    assert payload["contact"]["lead_source_id"] == _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID
+
+
+def test_payload_uses_program_specific_lead_source_when_set() -> None:
+    program = _program()
+    program.config = {"crm_lead_source_id": 17009999999}
+    payload = build_contact_payload(_trade_lead(), program)
+    assert payload["contact"]["lead_source_id"] == 17009999999
+
+
 def test_payload_starts_at_lead_stage_new_status() -> None:
     payload = build_contact_payload(_trade_lead(), _program())
     assert payload["contact"]["lifecycle_stage_id"] == _LEAD_STAGE_ID

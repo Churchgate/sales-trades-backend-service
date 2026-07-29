@@ -58,11 +58,13 @@ _EXPORT_LAUNCHPAD_CONFIG = {
         "E-Commerce", "ESG", "Finance and Tax", "Managing a Global Workforce",
         "Tariff Playbook", "Supply Chain", "Export Bootcamp", "Other",
     ],
-    # Still testing this program end-to-end (matches the crm_sync_enabled=False
-    # stance the export-launchpad-2026 CAMPAIGN was seeded with in
-    # scripts/seed_campaigns.py) — don't push registrations into the live
-    # Freshsales pipeline yet. Flip to True (or remove) once ready to go live.
-    "crm_sync_enabled": False,
+    # Live in production (flipped on once the integration was validated
+    # end-to-end and the dedicated Freshsales lead source was wired in — see
+    # trade_crm_sync.py). This script is idempotent and re-applies `config`
+    # in full on every run, so this MUST track the real production value,
+    # not a "still testing" placeholder — verified live via `railway run`
+    # against the production DB before changing this back to True here.
+    "crm_sync_enabled": True,
     # Sent once, on first capture, to each participant with an email address
     # (services/trade_mailer.py). from_email must be a verified Sender
     # Identity in the WTC_SENDGRID account or sends 403 — confirm
@@ -95,6 +97,84 @@ _EXPORT_LAUNCHPAD_CONFIG = {
     },
 }
 
+# --- Trade Mission programs (Canton Fair, MUSIAD Expo, Belgium-Luxembourg) ---
+# Replace three Google Forms that previously collected these applications.
+# Unlike Export Launchpad, mission-specific fields (passport info, visa
+# status, travel history, ticket tier, sector of activities) are NOT
+# promoted to typed TradeLead columns — they live in `responses` only (see
+# TradeLeadOut.responses), since a new typed column per mission would bloat
+# the schema indefinitely as more missions are added.
+_MISSION_REQUIRED_DOCUMENTS = [
+    {"key": "passport_data_page", "label": "Passport Data Page", "required": True},
+]
+
+# New — no admin approval concept exists in Trade before this change. Both
+# `require_admin_approval: True` and `crm_sync_enabled: True` are safe to set
+# together from day one: nothing reaches Freshsales until an admin approves a
+# participant regardless of the sync kill switch, so there's no need for a
+# separate "test mode" flag layered on top (see trade_crm_sync.py).
+_MISSION_BASE_CONFIG = {
+    "required_documents": _MISSION_REQUIRED_DOCUMENTS,
+    "require_admin_approval": True,
+    "crm_sync_enabled": True,
+    # Dedicated Freshsales lead source not created yet (Admin > Sales Force
+    # Automation > Sources, same manual precedent as "Export Launch
+    # Pad-Cohort 1" / "NOG-Week-2026") — falls back to the Export Launchpad
+    # source until set. Non-blocking: require_admin_approval already gates
+    # everything, so this can be filled in anytime before the first approval.
+    "crm_lead_source_id": None,
+}
+
+_CANTON_FAIR_CONFIG = {
+    **_MISSION_BASE_CONFIG,
+    "base_tags": ["Canton Fair", "Trade Mission", "canton-fair-2026"],
+    "lead_notification": {"enabled": True, "to_email": "Tradeservices@wtcabuja.com"},
+    "application_confirmation": {
+        "subject": "Your WTC Abuja Canton Fair Application Has Been Received",
+        "programme_name": "the 140th Canton Fair Trade Mission to Guangzhou, China",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "response_days": 3,
+        "logo_url": _EMAIL_LOGO,
+    },
+}
+
+_MUSIAD_EXPO_CONFIG = {
+    **_MISSION_BASE_CONFIG,
+    "base_tags": ["MUSIAD Expo", "Trade Mission", "musiad-expo-2026"],
+    "lead_notification": {"enabled": True, "to_email": "Tradeservices@wtcabuja.com"},
+    "application_confirmation": {
+        "subject": "Your WTC Abuja MUSIAD Expo Application Has Been Received",
+        "programme_name": "the MUSIAD Expo 2026 Trade Mission to Istanbul, Türkiye",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "response_days": 3,
+        "logo_url": _EMAIL_LOGO,
+    },
+}
+
+_BELGIUM_LUXEMBOURG_CONFIG = {
+    **_MISSION_BASE_CONFIG,
+    "base_tags": ["Belgium-Luxembourg CBL", "Trade Mission", "belgium-luxembourg-2026"],
+    "lead_notification": {"enabled": True, "to_email": "Tradeservices@wtcabuja.com"},
+    "application_confirmation": {
+        "subject": "Your WTC Abuja Nigeria-Belgium-Luxembourg Business Forum Application "
+        "Has Been Received",
+        "programme_name": "the 4th High-Level Nigeria–Belgium–Luxembourg Business Forum "
+        "in Brussels, Belgium",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "response_days": 3,
+        "logo_url": _EMAIL_LOGO,
+    },
+}
+
 PROGRAMS: list[dict] = [
     {
         "slug": "export-launchpad-2026",
@@ -105,6 +185,36 @@ PROGRAMS: list[dict] = [
         "ends_on": None,
         "timezone": "Africa/Lagos",
         "config": _EXPORT_LAUNCHPAD_CONFIG,
+    },
+    {
+        "slug": "canton-fair-2026",
+        "name": "140th Canton Fair Trade Mission — Guangzhou, China",
+        "kind": KIND_BOOT_CAMP,
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 10, 15),
+        "ends_on": date(2026, 11, 4),
+        "timezone": "Africa/Lagos",
+        "config": _CANTON_FAIR_CONFIG,
+    },
+    {
+        "slug": "musiad-expo-2026",
+        "name": "MUSIAD Expo 2026 — Istanbul, Türkiye",
+        "kind": KIND_BOOT_CAMP,
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 9, 23),
+        "ends_on": date(2026, 9, 26),
+        "timezone": "Africa/Lagos",
+        "config": _MUSIAD_EXPO_CONFIG,
+    },
+    {
+        "slug": "belgium-luxembourg-2026",
+        "name": "4th High-Level Nigeria–Belgium–Luxembourg Business Forum (CBL 2026)",
+        "kind": KIND_BOOT_CAMP,
+        "status": STATUS_ACTIVE,
+        "starts_on": date(2026, 10, 28),
+        "ends_on": date(2026, 10, 30),
+        "timezone": "Africa/Lagos",
+        "config": _BELGIUM_LUXEMBOURG_CONFIG,
     },
 ]
 

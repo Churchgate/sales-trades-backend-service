@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
-from app.api.dependencies import SessionDep, require_role
+from app.api.dependencies import CurrentUserDep, SessionDep, require_role
 from app.models.trade_lead import TradeLead
 from app.repositories import trade_repo
 from app.schemas.trade import (
@@ -31,6 +31,7 @@ from app.schemas.trade import (
     TradeRegistrationCreateRequest,
     TradeRegistrationDetailResponse,
     TradeRegistrationOut,
+    TradeReviewUpdateRequest,
 )
 from app.services import (
     trade_capture,
@@ -195,6 +196,7 @@ async def list_participants(
     session: SessionDep,
     crm_sync_status: Annotated[str | None, Query()] = None,
     eligibility_status: Annotated[str | None, Query()] = None,
+    review_status: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -205,6 +207,7 @@ async def list_participants(
         program_id,
         crm_sync_status=crm_sync_status,
         eligibility_status=eligibility_status,
+        review_status=review_status,
         search=search,
         limit=limit,
         offset=offset,
@@ -214,6 +217,7 @@ async def list_participants(
         program_id,
         crm_sync_status=crm_sync_status,
         eligibility_status=eligibility_status,
+        review_status=review_status,
         search=search,
     )
     return TradeLeadsListResponse(
@@ -269,6 +273,32 @@ async def get_participant(lead_id: int, session: SessionDep) -> TradeLeadDetailR
     lead = await trade_repo.get_lead(session, lead_id)
     if lead is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+    return TradeLeadDetailResponse(
+        status_code=status.HTTP_200_OK, lead=await _lead_out(session, lead)
+    )
+
+
+@router.patch(
+    "/participants/{lead_id}/review",
+    dependencies=[Depends(require_role("admin", "superadmin"))],
+)
+async def review_participant(
+    lead_id: int,
+    body: TradeReviewUpdateRequest,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> TradeLeadDetailResponse:
+    """Admin approval gate — controls whether this participant is ever
+    eligible for CRM sync on programs with config["require_admin_approval"]
+    (see trade_crm_sync.sync_trade_lead). Scoped to admin/superadmin only,
+    stricter than the rest of the view-all trade admin surface, since this
+    directly controls what reaches Freshsales."""
+    lead = await trade_repo.get_lead(session, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+    lead = await trade_repo.set_review(
+        session, lead, status=body.status, by=current_user.email
+    )
     return TradeLeadDetailResponse(
         status_code=status.HTTP_200_OK, lead=await _lead_out(session, lead)
     )

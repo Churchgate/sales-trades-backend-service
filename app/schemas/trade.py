@@ -1,11 +1,19 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.responses import BaseResponse
 
 # --- Requests ---
+
+
+class TradeReviewUpdateRequest(BaseModel):
+    """PATCH — admin approval gate on a Trade participant. Independent of
+    eligibility_status (document completeness) and crm_sync_status (delivery
+    mechanism) — see the REVIEW_* constants in app.models.trade_lead."""
+
+    status: Literal["approved", "rejected"]
 
 
 class TradeRegistrationCreateRequest(BaseModel):
@@ -108,6 +116,11 @@ class TradeLeadOut(BaseModel):
     captured_at: datetime | None = None
     created_at: datetime
 
+    # Full verbatim submission, including anything not promoted to a typed
+    # column above — e.g. passport/visa/ticket-tier fields for programs other
+    # than Export Launchpad. See app.services.trade_capture.
+    responses: dict[str, Any] = Field(default_factory=dict)
+
     crm_sync_status: str
     crm_synced_at: datetime | None = None
     crm_contact_id: str | None = None
@@ -119,6 +132,10 @@ class TradeLeadOut(BaseModel):
 
     eligibility_status: str
     eligibility_submitted_at: datetime | None = None
+
+    review_status: str
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
 
 
 class TradeDocumentOut(BaseModel):
