@@ -31,6 +31,15 @@ ELIGIBILITY_SUBMITTED = "submitted"
 ELIGIBILITY_APPROVED = "approved"
 ELIGIBILITY_REJECTED = "rejected"
 
+# Admin registration-review gate — deliberately separate from
+# eligibility_status (document *completeness*, computed automatically) and
+# crm_sync_status (delivery mechanism). This is a human decision: "should
+# this participant ever reach Freshsales." Only enforced for programs that
+# opt in via config["require_admin_approval"] — see trade_crm_sync.py.
+REVIEW_PENDING = "pending"
+REVIEW_APPROVED = "approved"
+REVIEW_REJECTED = "rejected"
+
 
 class TradeLead(SQLModel, table=True):
     """One participant of a Trade program registration.
@@ -61,6 +70,7 @@ class TradeLead(SQLModel, table=True):
         Index("idx_trade_leads_registration", "registration_id", "participant_index"),
         Index("idx_trade_leads_program_created", "trade_program_id", "created_at"),
         Index("idx_trade_leads_crm_sync", "crm_sync_status"),
+        Index("idx_trade_leads_review_status", "review_status"),
     )
 
     id: int | None = Field(
@@ -148,6 +158,13 @@ class TradeLead(SQLModel, table=True):
     eligibility_submitted_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+
+    # Admin registration-review gate — see REVIEW_* constants above.
+    review_status: str = Field(default=REVIEW_PENDING)
+    reviewed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    reviewed_by: str | None = None
 
     # Rep-scoping placeholder, unused until a later phase wires OwnerScopeDep
     # into the /trade endpoints.

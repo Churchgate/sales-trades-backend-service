@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,12 +87,25 @@ async def update_lead(session: AsyncSession, lead: TradeLead) -> TradeLead:
     return lead
 
 
+async def set_review(
+    session: AsyncSession, lead: TradeLead, *, status: str, by: str | None
+) -> TradeLead:
+    """Admin registration-review gate — independent of eligibility_status
+    (document completeness) and crm_sync_status (delivery mechanism). See
+    REVIEW_* constants in app.models.trade_lead."""
+    lead.review_status = status
+    lead.reviewed_at = datetime.now(UTC)
+    lead.reviewed_by = by
+    return await update_lead(session, lead)
+
+
 def _apply_filters(
     stmt: Select,
     *,
     program_id: int | None = None,
     crm_sync_status: str | None = None,
     eligibility_status: str | None = None,
+    review_status: str | None = None,
     search: str | None = None,
 ) -> Select:
     if program_id is not None:
@@ -99,6 +114,8 @@ def _apply_filters(
         stmt = stmt.where(TradeLead.crm_sync_status == crm_sync_status)
     if eligibility_status is not None:
         stmt = stmt.where(TradeLead.eligibility_status == eligibility_status)
+    if review_status is not None:
+        stmt = stmt.where(TradeLead.review_status == review_status)
     if search:
         pattern = f"%{search.lower()}%"
         stmt = stmt.where(
@@ -115,6 +132,7 @@ async def list_leads(
     *,
     crm_sync_status: str | None = None,
     eligibility_status: str | None = None,
+    review_status: str | None = None,
     search: str | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -124,6 +142,7 @@ async def list_leads(
         program_id=program_id,
         crm_sync_status=crm_sync_status,
         eligibility_status=eligibility_status,
+        review_status=review_status,
         search=search,
     ).order_by(TradeLead.created_at.desc()).limit(limit).offset(offset)
     result = await session.execute(stmt)
@@ -136,6 +155,7 @@ async def count_leads(
     *,
     crm_sync_status: str | None = None,
     eligibility_status: str | None = None,
+    review_status: str | None = None,
     search: str | None = None,
 ) -> int:
     stmt = _apply_filters(
@@ -143,6 +163,7 @@ async def count_leads(
         program_id=program_id,
         crm_sync_status=crm_sync_status,
         eligibility_status=eligibility_status,
+        review_status=review_status,
         search=search,
     )
     return (await session.execute(stmt)).scalar_one()

@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.freshsales.client import FreshsalesClient
-from app.models.trade_lead import CRM_FAILED, CRM_SKIPPED, CRM_SYNCED, TradeLead
+from app.models.trade_lead import CRM_FAILED, CRM_SKIPPED, CRM_SYNCED, REVIEW_APPROVED, TradeLead
 from app.models.trade_program import TradeProgram
 from app.repositories import trade_repo
 
@@ -41,6 +41,15 @@ _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID = 17001007411
 
 def build_contact_payload(lead: TradeLead, program: TradeProgram) -> dict[str, Any]:
     """Map a TradeLead (one participant) to a Freshsales contacts/upsert body."""
+    # Each program can carry its own Freshsales lead source (created via
+    # Freshsales Admin > Sales Force Automation > Sources, same manual
+    # precedent as the Export Launchpad one below) — falls back to the
+    # Export Launchpad source for programs that haven't had one created yet
+    # (key absent OR explicitly None, e.g. newly-seeded programs pending
+    # manual Freshsales setup — `or` catches both, unlike a bare `.get(default)`).
+    lead_source_id = (program.config or {}).get(
+        "crm_lead_source_id"
+    ) or _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID
     contact: dict[str, Any] = {
         "first_name": lead.first_name,
         "last_name": lead.last_name,
@@ -48,7 +57,7 @@ def build_contact_payload(lead: TradeLead, program: TradeProgram) -> dict[str, A
         "mobile_number": lead.phone,
         "job_title": lead.job_title,
         "tags": lead.tags or [],
-        "lead_source_id": _EXPORT_LAUNCHPAD_COHORT1_LEAD_SOURCE_ID,
+        "lead_source_id": lead_source_id,
         "lifecycle_stage_id": _LEAD_STAGE_ID,
         "contact_status_id": _NEW_STATUS_ID,
         "custom_field": {
@@ -85,6 +94,16 @@ async def sync_trade_lead(
     # an explicit False skips it.
     program_sync_enabled = (program.config or {}).get("crm_sync_enabled", True)
     if not settings.freshsales_lead_sync_enabled or not program_sync_enabled:
+        lead.crm_sync_status = CRM_SKIPPED
+        return await trade_repo.update_lead(session, lead)
+
+    # Per-program admin-approval gate (program.config["require_admin_approval"]
+    # = True) — a human must explicitly approve this participant (see
+    # trade_repo.set_review / PATCH /trade/participants/{id}/review) before
+    # they're ever eligible for CRM sync. Absent/false preserves today's
+    # behavior for programs like Export Launchpad that don't opt in.
+    require_admin_approval = (program.config or {}).get("require_admin_approval", False)
+    if require_admin_approval and lead.review_status != REVIEW_APPROVED:
         lead.crm_sync_status = CRM_SKIPPED
         return await trade_repo.update_lead(session, lead)
 
