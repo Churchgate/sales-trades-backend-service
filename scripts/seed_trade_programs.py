@@ -175,6 +175,29 @@ _BELGIUM_LUXEMBOURG_CONFIG = {
     },
 }
 
+# No document upload — the source form (forms.gle/tyTVX7Xi4Z4GTk5J6) never
+# asked for passport/travel documents (visa support is offered as a service,
+# via a supporting invitation letter, not something the applicant uploads).
+_SPOTLIGHT_NIGERIA_CONFIG = {
+    "required_documents": [],
+    "require_admin_approval": True,
+    "crm_sync_enabled": True,
+    "crm_lead_source_id": None,
+    "base_tags": ["Spotlight Nigeria", "France", "Trade Mission", "spotlight-nigeria-2026"],
+    "lead_notification": {"enabled": True, "to_email": "Tradeservices@wtcabuja.com"},
+    "application_confirmation": {
+        "subject": "Your WTC Abuja Spotlight Nigeria Application Has Been Received",
+        "programme_name": "Spotlight Nigeria 2026 — the Nigeria-France Business & Investment "
+        "Summit",
+        "from_email": "Tradeservices@wtcabuja.com",
+        "from_name": "WTC Abuja Trade Services",
+        "contact_email": "Tradeservices@wtcabuja.com",
+        "contact_phone": "09164793000",
+        "response_days": 3,
+        "logo_url": _EMAIL_LOGO,
+    },
+}
+
 PROGRAMS: list[dict] = [
     {
         "slug": "export-launchpad-2026",
@@ -215,6 +238,17 @@ PROGRAMS: list[dict] = [
         "ends_on": date(2026, 10, 30),
         "timezone": "Africa/Lagos",
         "config": _BELGIUM_LUXEMBOURG_CONFIG,
+    },
+    {
+        "slug": "spotlight-nigeria-2026",
+        "name": "Spotlight Nigeria 2026 — France Trade Mission",
+        "kind": KIND_BOOT_CAMP,
+        "status": STATUS_ACTIVE,
+        # No dates disclosed on the source form.
+        "starts_on": None,
+        "ends_on": None,
+        "timezone": "Africa/Lagos",
+        "config": _SPOTLIGHT_NIGERIA_CONFIG,
     },
 ]
 
