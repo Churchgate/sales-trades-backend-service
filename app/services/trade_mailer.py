@@ -22,6 +22,7 @@ phase if Trade email engagement tracking is needed.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
@@ -253,6 +254,44 @@ async def send_application_confirmation(
 # residential viewing/materials fields.
 
 
+# Rendered separately (2ND PARTICIPANT) or not useful in an internal
+# notification (consent booleans just confirm the form was submitted).
+_NOTIFICATION_EXCLUDED_RESPONSE_KEYS = {
+    "second_participant",
+    "consent_terms",
+    "consent_data_processing",
+    "consent_liability_waiver",
+    "consent_photo_video",
+}
+
+
+def _format_notification_label(key: str) -> str:
+    return key.replace("_", " ").title()
+
+
+def _format_notification_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value) if value else "—"
+    if value in (None, ""):
+        return "—"
+    return str(value)
+
+
+def _notification_detail_items(primary: TradeLead) -> list[tuple[str, str]]:
+    """Program-agnostic (label, value) pairs from `responses` — covers both
+    Export Launchpad's promoted fields (sector/employees/topics, still in
+    `responses` alongside their typed columns) and mission-specific fields
+    (passport/visa/ticket-tier) that only ever live in `responses`, with no
+    per-program code needed on either side."""
+    return [
+        (_format_notification_label(key), _format_notification_value(value))
+        for key, value in (primary.responses or {}).items()
+        if key not in _NOTIFICATION_EXCLUDED_RESPONSE_KEYS and value not in (None, "", [])
+    ]
+
+
 def build_lead_notification_email(
     participants: list[TradeLead], program: TradeProgram
 ) -> tuple[str, str, str]:
@@ -262,9 +301,7 @@ def build_lead_notification_email(
     full_name = " ".join(filter(None, [primary.first_name, primary.last_name])) or "Unknown"
     company = primary.company or "Not provided"
     job_title = primary.job_title or "Not provided"
-    sector = primary.industry_sector or "Not provided"
-    employees = primary.employee_count or "Not provided"
-    topics = ", ".join(primary.topics_of_interest or []) or "None selected"
+    detail_items = _notification_detail_items(primary)
     captured_at = (
         primary.captured_at.astimezone(UTC).strftime("%-d %B %Y, %H:%M")
         if primary.captured_at
@@ -276,7 +313,7 @@ def build_lead_notification_email(
         if d.get("required")
     ]
 
-    subject = f"New Export Launchpad Application: {full_name} — {company}"
+    subject = f"New {program.name} Application: {full_name} — {company}"
 
     # ── plain text ───────────────────────────────────────────────────────────
     second_text = (
@@ -285,17 +322,15 @@ def build_lead_notification_email(
         else "None"
     )
     text = (
-        f"New Export Launchpad Application — {program.name}\n"
+        f"New {program.name} Application\n"
         f"{'=' * 50}\n\n"
         f"Name:            {full_name}\n"
         f"Company:         {company}\n"
         f"Title:           {job_title}\n"
         f"Email:           {primary.email}\n"
         + (f"Phone:           {primary.phone}\n" if primary.phone else "")
-        + f"Industry sector: {sector}\n"
-        f"Employees:       {employees}\n"
-        f"Topics:          {topics}\n"
-        f"2nd participant: {second_text}\n\n"
+        + "".join(f"{label + ':':<17}{value}\n" for label, value in detail_items)
+        + f"2nd participant: {second_text}\n\n"
         f"Required documents outstanding until submitted: {', '.join(required_docs) or 'None'}\n\n"
         f"Registration ID: {primary.registration_id}\n"
         f"Captured: {captured_at} via wtcabuja.com\n"
@@ -322,9 +357,34 @@ def build_lead_notification_email(
         if required_docs
         else f'<div style="color:{_LABEL_GRAY};font-size:14px">None configured</div>'
     )
+    # Paired two-per-row to match the rest of this email's layout; an odd
+    # trailing item gets an empty partner cell rather than stretching full-width.
+    detail_pairs = [detail_items[i : i + 2] for i in range(0, len(detail_items), 2)]
+    detail_rows = "\n".join(
+        f"""\
+            <tr>
+              <td width="50%" style="vertical-align:top;padding-right:16px;padding-bottom:20px">
+                {_label(pair[0][0])}
+                <div style="color:{_MUTED};font-size:14px">{pair[0][1]}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;padding-left:16px;padding-bottom:20px">
+                {f'{_label(pair[1][0])}<div style="color:{_MUTED};font-size:14px">{pair[1][1]}</div>' if len(pair) > 1 else ""}
+              </td>
+            </tr>"""
+        for pair in detail_pairs
+    )
+    detail_html = (
+        f"""\
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+{detail_rows}
+          </table>
+          {_divider()}"""
+        if detail_items
+        else ""
+    )
 
     body = f"""\
-{_wtc_header("New Export Launchpad Application")}
+{_wtc_header(f"New {program.name} Application")}
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr><td style="padding:32px 40px">
           <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
@@ -346,26 +406,11 @@ def build_lead_notification_email(
                 {_label("TITLE")}
                 <div style="color:{_MUTED};font-size:14px">{job_title}</div>
               </td>
-              <td width="50%" style="vertical-align:top;padding-left:16px">
-                {_label("SECTOR")}
-                <div style="color:{_MUTED};font-size:14px">{sector}</div>
-              </td>
+              <td width="50%"></td>
             </tr>
           </table>
           {_divider()}
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
-            <tr>
-              <td width="50%" style="vertical-align:top;padding-right:16px">
-                {_label("EMPLOYEES")}
-                <div style="color:{_MUTED};font-size:14px">{employees}</div>
-              </td>
-              <td width="50%" style="vertical-align:top;padding-left:16px">
-                {_label("TOPICS OF INTEREST")}
-                <div style="color:{_MUTED};font-size:14px">{topics}</div>
-              </td>
-            </tr>
-          </table>
-          {_divider()}
+{detail_html}
           {_label("CONTACT")}
           <div style="color:{_GOLD};font-size:14px"><a href="mailto:{primary.email}" style="color:{_GOLD};text-decoration:none">&#9993; {primary.email}</a></div>
           {phone_line}
@@ -385,7 +430,7 @@ def build_lead_notification_email(
       </table>
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr><td style="background:{_BG};border-top:1px solid {_DIVIDER};padding:22px 40px;text-align:center">
-          <div style="color:{_DIM};font-size:12px;margin-bottom:4px">Captured via wtcabuja.com Export Launchpad application form</div>
+          <div style="color:{_DIM};font-size:12px;margin-bottom:4px">Captured via wtcabuja.com &middot; {program.name} application form</div>
           <div style="color:{_DIM};font-size:12px;margin-bottom:14px">{captured_at} &middot; {program.name}</div>
           <div style="color:{_GOLD};font-size:9px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase">WORLD TRADE CENTER ABUJA</div>
         </td></tr>
